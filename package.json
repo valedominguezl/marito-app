@@ -1,0 +1,9 @@
+{
+  "name": "marito",
+  "private": true,
+  "description": "Marito: la ventana flotante de Claude (Alt+F2)",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "e2e": "python -X utf8 tests/e2e/demo.py"
+  }
+}

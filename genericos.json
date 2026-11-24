@@ -1,0 +1,8 @@
+[
+  "google.com", "googleusercontent.com", "gstatic.com", "github.com", "githubusercontent.com", "gitlab.com", "bitbucket.org",
+  "localhost", "127.0.0.1", "0.0.0.0", "vercel.com", "netlify.com", "railway.app", "railway.com", "cloudflare.com",
+  "supabase.com", "notion.so", "notion.site", "figma.com", "youtube.com", "chatgpt.com", "openai.com", "claude.ai",
+  "claude.com", "anthropic.com", "stackoverflow.com", "wikipedia.org", "microsoft.com", "live.com", "outlook.com",
+  "office.com", "sharepoint.com", "whatsapp.com", "facebook.com", "instagram.com", "x.com", "twitter.com", "linkedin.com",
+  "mercadopago.com.ar", "mercadolibre.com.ar", "npmjs.com", "mozilla.org", "canva.com", "dropbox.com", "trello.com"
+]

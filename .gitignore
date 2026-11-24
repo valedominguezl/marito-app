@@ -1,0 +1,12 @@
+node_modules/
+*.log
+lib/arreglo-native-*.dll
+temporal/
+lib/marca-native-*.dll
+
+# La configuración de cada PC vive en %LOCALAPPDATA%\arreglo\proyectos.json
+proyectos.json
+# El instalador: lo arma instalador\armar.ps1
+instalador/salida/
+instalador/node/
+lanzador/Marito.exe

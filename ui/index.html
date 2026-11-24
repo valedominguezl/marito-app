@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="es-AR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Marito</title>
+<link rel="icon" href="/ui/marito.png">
+<link rel="manifest" href="/ui/manifest.json">
+<link rel="apple-touch-icon" href="/ui/marito.png">
+<meta name="theme-color" content="#262624">
+<link rel="stylesheet" href="/ui/app.css">
+</head>
+<body>
+<header class="bar" id="bar">
+  <div class="tabs" id="tabs" role="tablist" aria-label="Conversaciones"></div>
+  <button class="icon-btn tab-add" id="btn-new" type="button" aria-label="Conversación nueva (Ctrl+T)" title="Conversación nueva (Ctrl+T)">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+  </button>
+  <span class="spacer"></span>
+  <button class="icon-btn btn-barra" id="btn-barra" type="button" aria-label="Achicar a la barra (Alt+F2)" title="Achicar a la barra (Alt+F2)">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></svg>
+  </button>
+  <div class="fondo-wrap">
+    <button class="icon-btn" id="btn-fondo" type="button" aria-label="Fondo de la ventana" title="Fondo de la ventana: transparencia, deformación y difuminado" aria-haspopup="true" aria-expanded="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+    </button>
+    <div class="fondo-panel" id="fondo-panel" role="group" aria-label="Fondo de la ventana" hidden></div>
+  </div>
+  <div class="hist-wrap">
+    <button class="icon-btn" id="btn-hist" type="button" aria-label="Historial de conversaciones" title="Historial de conversaciones" aria-haspopup="true" aria-expanded="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></svg>
+    </button>
+    <div class="hist-menu" id="hist-menu" role="menu" hidden></div>
+  </div>
+  <button class="icon-btn on" id="btn-pin" type="button" aria-pressed="true" aria-label="Fijada arriba de todo" title="Fijada arriba de todo: tocá para soltarla">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>
+  </button>
+  <button class="icon-btn" id="btn-min" type="button" aria-label="Minimizar" title="Minimizar">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12"/></svg>
+  </button>
+  <button class="icon-btn" id="btn-max" type="button" aria-label="Maximizar" title="Maximizar (doble click en la barra) · F11 pantalla completa">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+  </button>
+  <button class="icon-btn icon-btn-close" id="btn-close" type="button" aria-label="Cerrar Marito" title="Cerrar Marito (para esconderlo: la rayita o Esc)">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+  </button>
+</header>
+<div class="sub-row" id="sub-row">
+  <div class="tab-row" id="tab-row" hidden>
+    <button class="icon-btn tab-arrow" id="tabs-prev" type="button" aria-label="Ver conversaciones anteriores" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+    </button>
+    <div class="tabs tabs-all" id="tabs2" role="tablist" aria-label="Todas las conversaciones"></div>
+    <button class="icon-btn tab-arrow" id="tabs-next" type="button" aria-label="Ver más conversaciones" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+    </button>
+  </div>
+  <div class="ctx-box" id="ctx-row" hidden>
+    <span class="ctx" id="ctx" title="Contexto que ocupa esta conversación">
+      <svg class="ctx-ring" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5"/><circle class="ctx-fill" id="ctx-fill" cx="10" cy="10" r="7.5"/></svg>
+      <span id="ctx-n"></span>
+    </span>
+    <button class="icon-btn chain-btn" id="btn-chain" type="button" aria-label="Terminemos" title="Terminemos: cierra con /terminemos y, si queda algo pendiente, sigue solo en un chat nuevo">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+    </button>
+  </div>
+</div>
+
+<!-- En la ventana la tarjeta no cuenta (display: contents); en la barra es la caja de la respuesta, debajo. -->
+<div class="tarjeta" id="tarjeta">
+  <main class="scroll" id="scroll" tabindex="-1">
+    <div class="pin-wrap"><button class="pinned" id="pinned" type="button" title="Ir a este mensaje" hidden></button></div>
+    <div id="feeds"></div>
+  </main>
+  <div class="tarjeta-pie">
+    <button class="continuar" id="btn-continuar" type="button" title="Seguir la charla en la ventana del costado (Alt+F1)">Continuar
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+    </button>
+  </div>
+  <div class="tarjeta-tirador" id="tarjeta-tirador" role="separator" aria-orientation="horizontal" aria-label="Alto de la respuesta" title="Arrastrá para agrandar o achicar la respuesta; tocá para cerrarla" aria-expanded="true"></div>
+</div>
+
+<footer class="composer-wrap" id="composer-wrap">
+  <div class="composer" id="composer">
+    <div class="thumbs" id="thumbs" hidden></div>
+    <span class="borde-barra" data-borde="10" title="Arrastrá para cambiar el ancho" aria-hidden="true"></span>
+    <span class="borde-barra" data-borde="11" title="Arrastrá para cambiar el ancho" aria-hidden="true"></span>
+    <div class="input-row">
+      <span class="btn-mover" id="btn-mover" title="Arrastrá para mover la barra" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>
+      </span>
+      <textarea id="input" rows="1" placeholder="Preguntá o pedí un arreglo…" aria-label="Mensaje" spellcheck="true"></textarea>
+      <div class="mic-wrap">
+        <button class="icon-btn" id="btn-mic" type="button" aria-pressed="false" aria-haspopup="true" aria-expanded="false" aria-label="Micrófono" title="Micrófono: dictar o charlar por voz">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>
+        </button>
+        <div class="push-menu mic-menu" id="mic-menu" role="menu" aria-label="Micrófono" hidden>
+          <button class="push-opt mic-opt" id="opt-dictar" type="button" role="menuitem">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h10M4 17h7"/></svg>
+            <span><b>Dictar</b><small>Se escribe en la caja; no se manda</small></span><kbd>Ctrl+M</kbd>
+          </button>
+          <button class="push-opt mic-opt" id="opt-charla" type="button" role="menuitem">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12Z"/><path d="M9 11v2M12 9.5v5M15 11v2"/></svg>
+            <span><b>Charla por voz</b><small>Hablás, se manda solo y Marito contesta en voz alta</small></span><kbd>Ctrl+Shift+M</kbd>
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="tools-row">
+      <button class="icon-btn" id="btn-attach" type="button" aria-label="Adjuntar archivos" title="Adjuntar archivos (también arrastrando o con Ctrl+V)">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m20.5 11.5-8.3 8.3a5 5 0 0 1-7-7l8.6-8.6a3.4 3.4 0 0 1 4.8 4.8l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9"/></svg>
+      </button>
+      <input type="file" id="file" multiple hidden>
+      <button class="icon-btn" id="btn-term" type="button" aria-pressed="false" aria-label="Terminal" title="Terminal: lo que escribas corre en PowerShell en la carpeta del proyecto (Ctrl+`)">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="m7 9 3 3-3 3M12.5 15H17"/></svg>
+      </button>
+      <button class="icon-btn" id="btn-zona" type="button" aria-label="Marcar una zona de la pantalla" title="Marcar una zona de la pantalla: va el recorte y dónde está (también Alt+F3)">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><rect x="8.5" y="8.5" width="7" height="7" rx="1"/></svg>
+      </button>
+      <span class="spacer"></span>
+      <label class="pick pick-model" title="Modelo">
+        <svg class="pick-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5 13.9 8.1 18.5 10 13.9 11.9 12 16.5 10.1 11.9 5.5 10 10.1 8.1Z"/><path d="M18.5 15.5 19.3 17.2 21 18 19.3 18.8 18.5 20.5 17.7 18.8 16 18 17.7 17.2Z"/></svg>
+        <select id="model" aria-label="Modelo"></select>
+        <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>
+      </label>
+      <label class="pick pick-effort" title="Esfuerzo del modelo">
+        <svg class="pick-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg>
+        <select id="effort" aria-label="Esfuerzo"></select>
+        <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>
+      </label>
+      <div class="push-wrap">
+        <button class="push-btn" id="btn-push" type="button" aria-label="Push"aria-haspopup="true" aria-expanded="false">
+          <svg class="push-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4M7 9l5-5 5 5"/><path d="M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3"/></svg><span>Push</span>
+          <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>
+        </button>
+        <div class="push-menu" id="push-menu" role="group" aria-label="Qué hacer con los cambios" hidden>
+          <label class="push-opt"><input type="checkbox" id="opt-commit"> Commitear los cambios</label>
+          <label class="push-opt"><input type="checkbox" id="opt-push"> Push automático (y deploy)</label>
+        </div>
+      </div>
+      <button class="send" id="send" type="button" aria-label="Enviar" title="Enviar (Enter)">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+      </button>
+      <button class="icon-btn btn-grande" id="btn-grande" type="button" aria-label="Continuar en la ventana (Alt+F1)" title="Continuar en la ventana del costado (Alt+F1)">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+      </button>
+      <button class="icon-btn btn-cerrar-barra" id="btn-cerrar-barra" type="button" aria-label="Cerrar Marito (Esc)" title="Cerrar Marito (Esc)">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+  </div>
+</footer>
+
+<div class="dropzone" id="dropzone" hidden><div>Soltá para adjuntar</div></div>
+
+<div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="Captura" hidden>
+  <img id="lightbox-img" alt="Captura ampliada">
+</div>
+
+<div class="edges" id="edges" aria-hidden="true">
+  <div data-borde="12" class="e-n"></div><div data-borde="15" class="e-s"></div>
+  <div data-borde="10" class="e-w"></div><div data-borde="11" class="e-e"></div>
+  <div data-borde="13" class="e-nw"></div><div data-borde="14" class="e-ne"></div>
+  <div data-borde="16" class="e-sw"></div><div data-borde="17" class="e-se"></div>
+</div>
+
+<script src="/ui/md.js"></script>
+<script src="/ui/estado.js"></script>
+<script src="/ui/pestanas.js"></script>
+<script src="/ui/historial-fondo.js"></script>
+<script src="/ui/dibujo.js"></script>
+<script src="/ui/publicacion.js"></script>
+<script src="/ui/eventos.js"></script>
+<script src="/ui/envio.js"></script>
+<script src="/ui/audio.js"></script>
+<script src="/ui/ventana.js"></script>
+<script src="/ui/arranque.js"></script>
+</body>
+</html>

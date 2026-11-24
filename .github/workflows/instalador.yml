@@ -1,0 +1,46 @@
+# Arma el instalador (instalador/armar.ps1) y, con un tag v*, lo publica en el release.
+name: Instalador
+on:
+  push:
+    tags: ['v*']
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  armar:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Pruebas
+        run: node --test tests/servidor-logica.test.mjs tests/md.test.mjs
+      - name: Inno Setup 6.7.4
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://github.com/jrsoftware/issrc/releases/download/is-6_7_4/innosetup-6.7.4.exe -OutFile is.exe
+          $s = Get-AuthenticodeSignature is.exe
+          if ($s.Status -ne 'Valid') { throw "Firma de Inno Setup: $($s.Status)" }
+          Start-Process .\is.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER',"/DIR=$env:RUNNER_TEMP\inno" -Wait
+          if (-not (Test-Path "$env:RUNNER_TEMP\inno\ISCC.exe")) { throw 'No se instaló Inno Setup' }
+      - name: Armar
+        shell: powershell
+        run: |
+          $v = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '0.0.0' }
+          .\instalador\armar.ps1 -Version $v -Iscc "$env:RUNNER_TEMP\inno\ISCC.exe"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: instalador
+          path: instalador/salida/Marito-Setup-*.exe
+      - name: Release
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $f = (Get-ChildItem instalador/salida/Marito-Setup-*.exe).FullName
+          $sha = (Get-FileHash $f -Algorithm SHA256).Hash
+          $notas = "Instalador para Windows 10/11 (64 bits). Necesita Claude Code con tu cuenta: ver el README.`n`nSHA-256: ``$sha``"
+          gh release create $env:GITHUB_REF_NAME $f --title "Marito $env:GITHUB_REF_NAME" --notes $notas
