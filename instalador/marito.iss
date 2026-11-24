@@ -56,9 +56,6 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 [Run]
 Filename: "{app}\Marito.exe"; Description: "Abrir Marito"; Flags: nowait postinstall skipifsilent
 
-[UninstallRun]
-Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM Marito.exe"; Flags: runhidden; RunOnceId: "CerrarMarito"
-
 [UninstallDelete]
 ; abrir.ps1 y marcar.ps1 compilan su código nativo en lib\ la primera vez.
 Type: filesandordirs; Name: "{app}\lib"
@@ -112,8 +109,39 @@ begin
   end;
 end;
 
+// Cierra todo lo de Marito que corre desde {app}: la bandeja (Marito.exe), el Node propio y el PowerShell de
+// abrir.ps1 / marcar.ps1 con su ventana. Con cerrar solo Marito.exe, la ventana abierta seguía andando después de
+// desinstalar y dejaba lib\ y node\node.exe sin borrar (probado en Windows Sandbox el 24/11). Por la línea de comandos
+// se cierran solo PowerShell y Python (los que corren abrir.ps1, marcar.ps1, voz.py): la copia temporal del
+// desinstalador (_unins.tmp) también lleva {app} en la suya y no hay que matarla.
+procedure CerrarMarito;
+var
+  Carpeta, Ps: String;
+  Codigo: Integer;
+begin
+  Carpeta := AddBackslash(ExpandConstant('{app}'));
+  StringChangeEx(Carpeta, '''', '''''', True);
+  Ps := '$c = ''' + Carpeta + '''; ' +
+    'Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.Name -notlike ''unins*'' -and (' +
+    '('''' + $_.ExecutablePath).StartsWith($c, ''OrdinalIgnoreCase'') -or ' +
+    '($_.Name -match ''^(powershell|pwsh|pythonw?)\.exe$'' -and ('''' + $_.CommandLine).IndexOf($c, [StringComparison]::OrdinalIgnoreCase) -ge 0)) } | ' +
+    'ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; Start-Sleep -Milliseconds 700';
+  Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+    '-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -Command "' + Ps + '"',
+    '', SW_HIDE, ewWaitUntilTerminated, Codigo);
+end;
+
+// Al instalar encima de una versión abierta, lo mismo (si no, Windows tiene tomados node.exe y las DLL de lib\).
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  CerrarMarito;
+  Result := '';
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
+  if CurUninstallStep = usUninstall then
+    CerrarMarito;
   // «Iniciar con Windows» también se puede prender desde el ícono de la bandeja: se saca igual.
   if CurUninstallStep = usPostUninstall then
     RegDeleteValue(HKCU, 'Software\Microsoft\Windows\CurrentVersion\Run', 'Marito');

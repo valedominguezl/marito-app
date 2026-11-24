@@ -49,6 +49,28 @@ se pueden sumar con un adaptador en `servidor/turnos.mjs`: los PR son bienvenido
 - Pruebas: `npm test`. Cómo está armado: [`ESPEC.md`](ESPEC.md).
 - Instalador: `instalador/armar.ps1 -Version 0.1.0` con Inno Setup 6. GitHub Actions lo arma y lo publica en cada tag `v*`.
 
+## Privacidad / Privacy
+
+Marito no manda nada a ningún servidor por su cuenta: no tiene telemetría ni cuenta propia. Lo que pedís lo procesa
+Claude Code con tu cuenta de Claude (según la [política de privacidad de Anthropic](https://www.anthropic.com/legal/privacy)),
+y solo descarga algo cuando lo pedís (Claude Code, la voz) o cuando falta WebView2 al instalar.
+
+*This program will not transfer any information to other networked systems unless specifically requested by the user
+or the person installing or operating it.*
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by
+[SignPath Foundation](https://signpath.org) *(applied for; until it is approved, releases are unsigned)*.
+
+- Signed files: `Marito-Setup-x.y.z.exe` and `Marito.exe`, built from this repository by
+  [GitHub Actions](.github/workflows) on GitHub-hosted runners for each `v*` tag. Bundled third-party binaries
+  (Node.js, WebView2 DLLs) keep their own upstream signatures.
+- Committers and reviewers: [valedominguezl](https://github.com/valedominguezl). Pull requests from anyone else are
+  reviewed before merging.
+- Approvers: [valedominguezl](https://github.com/valedominguezl). Every signing request is approved by hand.
+- Uninstall: from Windows Settings → Apps → Marito (the installer includes an uninstaller).
+
 ## Licencia
 
 [MIT](LICENSE)

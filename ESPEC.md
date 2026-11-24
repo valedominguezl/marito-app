@@ -516,6 +516,9 @@ alguno.
 - **El instalador** (`instalador\armar.ps1` + `marito.iss`, Inno Setup 6.7.4): por usuario, sin administrador, en
   `%LOCALAPPDATA%\Programs\Marito`. Lo arma GitHub Actions en el repo público con cada tag `v*` y lo sube al release.
   No está firmado: Windows SmartScreen avisa la primera vez («Más información» → «Ejecutar de todas formas»).
+  Al desinstalar, o al instalar encima de una versión abierta, cierra todo lo que corre desde su carpeta
+  (`CerrarMarito` en `marito.iss`: el lanzador, el Node propio y el PowerShell de la ventana). Probado en Windows
+  Sandbox el 24/11: instalar, Alt+F2/Alt+F1, instalar encima con la ventana abierta y desinstalar sin que quede nada.
 
 
 ## Pruebas
