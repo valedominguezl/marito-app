@@ -42,5 +42,10 @@ jobs:
         run: |
           $f = (Get-ChildItem instalador/salida/Marito-Setup-*.exe).FullName
           $sha = (Get-FileHash $f -Algorithm SHA256).Hash
-          $notas = "Instalador para Windows 10/11 (64 bits). Necesita Claude Code con tu cuenta: ver el README.`n`nSHA-256: ``$sha``"
-          gh release create $env:GITHUB_REF_NAME $f --title "Marito $env:GITHUB_REF_NAME" --notes $notas
+          # Las notas: la sección de esta versión en CHANGELOG.md («## 0.1.2 — fecha» hasta la próxima «## »).
+          $v = [regex]::Escape($env:GITHUB_REF_NAME.TrimStart('v'))
+          $m = [regex]::Match((Get-Content CHANGELOG.md -Raw -Encoding utf8), "(?ms)^## $v\b[^\n]*\n(.*?)(?=^## |\z)")
+          $cambios = if ($m.Success) { $m.Groups[1].Value.Trim() + "`n`n" } else { '' }
+          $notas = "$cambios---`n`nInstalador para Windows 10/11 (64 bits). Necesita Claude Code con tu cuenta: ver el README.`n`nSHA-256: ``$sha``"
+          $notas | Set-Content notas.md -Encoding utf8
+          gh release create $env:GITHUB_REF_NAME $f --title "Marito $env:GITHUB_REF_NAME" --notes-file notas.md

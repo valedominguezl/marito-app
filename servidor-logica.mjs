@@ -72,6 +72,29 @@ export function pareceDePantalla(texto) {
   return /\b(como|donde)\b|\b(mostrame|guiame|ensename|senalame|marcame)\b|\bque (toco|aprieto|boton)\b|\b(cierro|abro|activo|desactivo|apago|prendo|clic|click|toco)\b/.test(t);
 }
 
+// ¿Pregunta por lo que se ve, aunque no sea de «cómo hago»? (24/11, pedido del usuario: en medio de un tutorial preguntó
+// «¿por qué falla?» con un error a la vista y Claude siguió con el tutorial.) Las que señalan la pantalla («qué es esto»,
+// «mirá esta pantalla», «este error») siempre; las que no dicen de qué hablan («por qué falla», «qué pasó», «no anda»,
+// «¿está bien acá?») solo si la charla ya venía de la pantalla (`enPantalla`: hubo marca, tutorial o zona). Devuelve
+// 'senala', 'sin-tema' o ''. No cambia el esfuerzo: diagnosticar no es señalar un botón.
+export function preguntaDePantalla(texto, enPantalla) {
+  const t = String(texto || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
+  if (!t || t.length > 200) return '';
+  if (/\bque (es|significa|dice|quiere decir) (esto|eso|este|esta|aca|ahi)\b|\b(esta|la) pantalla\b|\bmira (esto|aca|ahi|lo que)\b|\b(este|ese) (error|cartel|aviso|mensaje|carte?lito)\b/.test(t)) return 'senala';
+  if (!enPantalla || t.length > 120) return '';
+  return /\bpor ?que\b|\bfall(a|o|an|aron)\b|\bno (anda|funciona|pasa nada|hace nada|sale|carga|aparece|encuentr\w*|me deja|abre|cambia)\b|\berror\b|\bque (paso|hago|onda)\b|\by ahora\b|\besta (todo )?bien\b|\b(dice|sale|aparece) que\b|\bse (trabo|colgo|cerro|rompio|borro)\b|\baca\b/.test(t) ? 'sin-tema' : '';
+}
+
+// ¿La charla venía de la pantalla? Hubo una marca, un tutorial o una zona marcada desde los dos últimos pedidos (no en
+// toda la charla: una marca de hace una hora no hace que «¿por qué falla el build?» sea de la pantalla).
+export function charlaDePantalla(historial, pedidos = 2) {
+  const h = historial || [];
+  let i = h.length;
+  for (let vistos = 0; i > 0 && vistos < pedidos;) if (h[--i].tipo === 'usuario') vistos++;
+  return h.slice(i).some((ev) => ev.tipo === 'marcar' || ev.tipo === 'tutorial'
+    || (ev.tipo === 'usuario' && (ev.adjuntos || []).some((a) => a.origen === 'zona')));
+}
+
 // Claude pidió los conectores: la etiqueta [CONECTORES] sola en un renglón (mencionada en una frase no cuenta).
 export function pideConectores(texto) {
   return /(^|\n)[ \t]*\[CONECTORES\][ \t]*(\n|$)/.test(String(texto || ''));
@@ -208,7 +231,7 @@ export function pasosEn(texto) {
   const out = [];
   for (const m of t.matchAll(/\[LUEGO:([^\]\n]{1,120})\]/g)) {
     const nombre = m[1].trim().replace(/^[«"']+|[»"']+$/g, '').trim();
-    if (nombre) out.push({ nombre, texto: renglonDe(t, m.index), ...masDe(t, m.index) });
+    if (nombre) out.push({ nombre, texto: renglonDe(t, m.index), ...masDe(t, m.index), rueda: ruedaDe(t, m.index) });
   }
   return out;
 }
@@ -226,13 +249,24 @@ export function masDe(texto, i) {
   return { mas: limpio(mas), alTocar: limpio(resto.join('|')) };
 }
 
+// Un paso que no es tocar sino mover la ruedita (24/11, pedido del usuario: «bajá con la ruedita» iba en texto, sin
+// marcar nada): [RUEDA:abajo|arriba|derecha|izquierda] en el renglón del paso. La marca queda sobre la parte que se mueve
+// y, cuando el usuario deja de mover, el servidor busca el control del paso siguiente y lo marca solo. '' si no es.
+export function ruedaDe(texto, i) {
+  const t = String(texto || '');
+  const ini = t.lastIndexOf('\n', i - 1) + 1;
+  let fin = t.indexOf('\n', i); if (fin < 0) fin = t.length;
+  const m = /\[RUEDA:\s*(abajo|arriba|derecha|izquierda)\s*\]/i.exec(t.slice(ini, fin));
+  return m ? m[1].toLowerCase() : '';
+}
+
 // El renglón donde está una etiqueta, sin el número de la lista, la viñeta ni las etiquetas: el paso. '' si la
 // etiqueta está sola en su renglón (el paso es lo que escribió antes).
 export function renglonDe(texto, i) {
   const t = String(texto || '');
   const ini = t.lastIndexOf('\n', i - 1) + 1;
   let fin = t.indexOf('\n', i); if (fin < 0) fin = t.length;
-  return t.slice(ini, fin).replace(/\[(MARCAR|LUEGO|MAS|CONECTORES)[^\]\n]*(\]|$)/g, '') // también una a medio escribir
+  return t.slice(ini, fin).replace(/\[(MARCAR|LUEGO|MAS|RUEDA|CONECTORES)[^\]\n]*(\]|$)/g, '') // también una a medio escribir
     .replace(/^\s*(?:\d+[.)]|[-*•])\s+/, '').replace(/\*\*/g, '').trim();
 }
 
@@ -275,14 +309,14 @@ export function resolverMarca(valor, captura) {
   const v = String(valor || '').trim();
   if (/^\d+$/.test(v)) {
     const c = (captura.controles || []).find((x) => x.n === Number(v));
-    return c && c.w > 0 && c.h > 0 ? { x: c.x, y: c.y, w: c.w, h: c.h, nombre: c.nombre || '' } : null;
+    return c && c.w > 0 && c.h > 0 ? { x: c.x, y: c.y, w: c.w, h: c.h, nombre: c.nombre || '', tipo: c.tipo || '' } : null;
   }
   const m = /^([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?::\s*(.*))?$/.exec(v);
   if (!m) {
     // Un nombre («[MARCAR:Rectangle]»), pero no la plantilla copiada tal cual («x,y,ancho,alto:…»).
     if (/^x\s*,/i.test(v)) return null;
     const c = buscarControl(captura, v);
-    return c ? { x: c.x, y: c.y, w: c.w, h: c.h, nombre: c.nombre } : null;
+    return c ? { x: c.x, y: c.y, w: c.w, h: c.h, nombre: c.nombre, tipo: c.tipo || '' } : null;
   }
   let [fx, fy, fw, fh] = m.slice(1, 5).map(Number);
   if (![fx, fy, fw, fh].every(Number.isFinite) || fx > 1 || fy > 1 || fw <= 0 || fh <= 0) return null;
@@ -290,6 +324,33 @@ export function resolverMarca(valor, captura) {
   if (fw * fh > 0.25) return null; // una «caja» así de grande es la ventana entera
   const x = Math.round(p.x + fx * p.w), y = Math.round(p.y + fy * p.h);
   return { x, y, w: Math.max(8, Math.round(fw * p.w)), h: Math.max(8, Math.round(fh * p.h)), nombre: (m[5] || '').trim() };
+}
+
+// ¿Pasó algo con el click? (24/11, pedido del usuario: tocó el botón que le dijo, no pasó nada y Marito no se enteró.)
+// Qué comparar entre la captura de cuando se marcó el paso (`antes`) y una de después (pN.json de marcar.ps1), en px de
+// la imagen: la ventana de adelante (`rect`), sin Marito (su chat cambia solo; en las dos capturas, por si la barra se
+// corrió) y aparte el control tocado. null = no hace falta mirar los píxeles: cambió la ventana de adelante (un diálogo,
+// otra app, otro título de página) o se movió.
+export function zonasComparar(antes, despues, lugar) {
+  const p = antes?.pantalla, q = despues?.pantalla;
+  const igualRect = (r, s) => r.x === s.x && r.y === s.y && r.w === s.w && r.h === s.h;
+  if (!p || !q || !igualRect(p, q) || antes.ventana !== despues.ventana || antes.app !== despues.app) return null;
+  if (antes.rect && despues.rect && !igualRect(antes.rect, despues.rect)) return null;
+  const rel = (r, m = 0) => r && { x: r.x - p.x - m, y: r.y - p.y - m, w: r.w + 2 * m, h: r.h + 2 * m };
+  // Un texto que leyó el OCR es la letra, no el botón que la rodea: el resaltado del botón al tocarlo caía «fuera»
+  // (24/11, probado con un botón de verdad: 100 puntos alrededor de un texto de 93×15). 3 alturas a los costados, 1 arriba y abajo.
+  const obj = lugar?.tipo === 'Texto' ? { x: lugar.x - 3 * lugar.h, y: lugar.y - lugar.h, w: lugar.w + 6 * lugar.h, h: 3 * lugar.h } : lugar;
+  return { zona: rel(antes.rect) || null, sin: [antes.marito, despues.marito].filter(Boolean).map((m) => rel(m, 6)), objetivo: rel(obj) || null };
+}
+
+// Con lo que contó `contarCambios` (servidor/png.mjs): ¿quedó igual? Unos pocos puntos fuera del control (el cursor de
+// texto que titila) no cuentan. Adentro del control solo cuenta en los que cambian ellos mismos al tocarlos (una casilla
+// se tilda); en un botón es el resaltado de tener el mouse encima.
+const TIPOS_QUE_CAMBIAN = ['CheckBox', 'RadioButton', 'Slider', 'ComboBox', 'TabItem', 'ListItem', 'TreeItem', 'DataItem', 'Edit'];
+export function quedoIgual(cuenta, tipo) {
+  if (!cuenta || cuenta.distinta) return false;
+  if (cuenta.fuera > 60) return false;
+  return !(TIPOS_QUE_CAMBIAN.includes(tipo) && cuenta.dentro > 12);
 }
 
 // El texto del cartel: la primera oración del paso (la acción: «Tocá «Archivo», arriba a la izquierda.»); el resto lo
@@ -311,7 +372,7 @@ export function fraseMarca(paso) {
 export function textoHablado(md) {
   return String(md || '')
     .replace(/```[\s\S]*?(```|$)/g, '\n')
-    .replace(/\[(MARCAR|LUEGO|MAS|CONECTORES)[^\]\n]*\]/g, '')
+    .replace(/\[(MARCAR|LUEGO|MAS|RUEDA|CONECTORES)[^\]\n]*\]/g, '')
     .split('\n').filter((l) => !/^\s*\|/.test(l)).join('\n')
     .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
     .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')

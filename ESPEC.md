@@ -151,6 +151,13 @@ inicial (`/?t=<token>`); la UI lo manda en el header `X-Token` (y como `?t=` en 
   se equivoque»): 3 de 3 con el mismo paso y la misma explicación, recuadro a los 3,7–4,2 s y fin a los 5,3–5,8 s. Se
   descartó: Sonnet (~6,7 s, más lento que Opus bajo), Haiku (no ganaba tiempo y se equivocó de programa) y agentes con
   otro modelo para leer (ya no hay nada que leer: la lista y la captura llegan en el mensaje; serían una vuelta más).
+  **También miran, con el esfuerzo elegido** (24/11, pedido del usuario: en un tutorial preguntó «por que falla» con un
+  «Error de autenticación» a la vista y Claude le explicó por qué había fallado el tutorial): las preguntas que señalan
+  la pantalla («qué es esto», «mirá esta pantalla», «este error») y, si la charla venía de la pantalla (hubo marca,
+  tutorial o zona: `charlaDePantalla`), las que no dicen de qué hablan («por qué falla», «qué pasó», «no anda», «¿está
+  bien acá?»; `preguntaDePantalla`). A estas el mensaje les suma `SIN_TEMA`: lo que se ve ahora manda sobre el tema
+  anterior y un tutorial dejado no es el tema. Probado con su caso real (la sesión cortada antes de ese mensaje y la
+  captura de entonces): 2 de 2 contestaron por el error de la pantalla (~20–28 s, Opus con su esfuerzo).
 - **Conectores a pedido** (desde el 23/11, lo eligió el usuario): cada conversación arranca **sin MCP**
   (`--strict-mcp-config` + `SIN_CONECTORES` en las instrucciones: primer texto ~2,8 s en vez de ~4,5). Si Claude necesita
   uno responde una frase y `[CONECTORES]` solo en el último renglón (`pideConectores`); el servidor emite `herramienta`
@@ -337,7 +344,9 @@ Inspirada en el Claude flotante de la app de escritorio / Claude Code: limpia, m
   primera etiqueta en cuanto se completa, la resuelve contra la última `pN.json` (`resolverMarca`) y arranca
   `marcar.ps1 -Mostrar -X -Y -W -H` (texto del cartel en `MARCA_TEXTO`): ventana en capas, click-through, que late
   hasta un click, Esc o 3 min. **Sale en las capturas** (desde el 23/11, pedido del usuario; antes se excluía con WDA_EXCLUDEFROMCAPTURE):
-  cuando Marito mira la pantalla nunca hay una a la vista. Una sola marca a la vez; un mensaje nuevo, cerrar la pestaña o apagar la
+  cuando Marito mira la pantalla nunca hay una a la vista, salvo la de un paso de ruedita, que queda mientras se mira:
+  por eso `Capture` (marca.cs) esconde las ventanas de la marca (título `Marito · marca`) ~60 ms mientras copia la
+  pantalla (24/11: tapaba justo lo que aparecía al bajar y el OCR no lo leía). Una sola marca a la vez; un mensaje nuevo, cerrar la pestaña o apagar la
   sacan (y cortan la lista: `c.pasoGen`).
 - **Click adentro** (`seguirPasos`): si quedan pasos `[LUEGO:…]`, el servidor corre `marcar.ps1` él mismo (a los 0,5 s; si
   no aparece, de nuevo a +0,9 y +1,8 s), busca el nombre (`buscarControl`: igual sin acentos, «…», atajos ni espacios; si no,
@@ -346,6 +355,39 @@ Inspirada en el Claude flotante de la app de escritorio / Claude Code: limpia, m
   encuentra, `marca-tocada` con `texto` («Listo, ya lo toqué. No encontré «X»…») y Claude sigue. Un solo paso o la
   lista terminada: nada, el tutorial queda terminado (24/11, pedido del usuario: antes un paso solo mandaba «Listo, ya lo
   toqué.» y Claude pensaba un turno entero al pedo).
+- **El click que no hizo nada** (24/11, pedido del usuario: tocó el botón que le dijo, no pasó nada y Marito no se
+  enteró). Cada marca guarda la captura de cuando se marcó (`tu.mostrada`); `pN.json` lleva además `rect` (la ventana de
+  adelante) y `marito` (su ventana, si está a la vista). Después del click se compara con la pantalla nueva
+  (`servidor/png.mjs`: lee el PNG sin dependencias, ~40 ms; `zonasComparar` + `contarCambios` + `quedoIgual`): otro título o
+  app adelante, otra pantalla o la ventana movida = cambió; si no, los píxeles de la ventana sin Marito, un punto de
+  cada 2×2, cambio si algún canal se mueve más de 24. Más de 60 puntos fuera del control = cambió; adentro solo cuenta en
+  casillas, opciones, pestañas, listas y campos (en un botón es el resaltado del mouse). Último o único paso: se mira a
+  los 0,8 s y a los 2,3 s; si las dos quedaron igual, `marca-tocada` «Listo, ya lo toqué («X»), pero no pasó nada: la
+  pantalla quedó igual. Mirá de nuevo y decime qué hacer.» (se ve en la tarjeta como el pedido y Claude mira). Con pasos
+  que siguen y el siguiente que no aparece: lo mismo con «y no aparece «Y»» en vez del «No encontré…» de siempre.
+  **Apenas afuera** (hasta 24 px del recuadro) la marca dice `cerca` y cuenta como adentro (antes era `fuera` y pausaba).
+  Si lo marcado es un texto del OCR (`Texto`), el control es el botón que lo rodea: cuenta como control 3 alturas de la
+  letra a los costados y 1 arriba y abajo (el resaltado del botón al tocarlo daba 100 puntos «fuera»). El aviso usa el
+  nombre del paso que escribió Claude, no el del OCR («Guardarcambios»).
+  Probado con capturas reales (una ventana de prueba con un botón que no hace nada y otro que muestra un texto, clicks de
+  verdad): 0 puntos cambiados con el mouse encima del primero, 937 con el segundo. Y de punta a punta con un turno real
+  (24/11, servidor de prueba + ventana con un panel largo y «Guardar cambios» abajo, que no hace nada): bajar con la
+  ruedita → el servidor marcó el botón solo a los 1,3 s → click → «no pasó nada» a los 4,2 s (2 de 2).
+- **Pasos de ruedita** (24/11, pedido del usuario: si el control estaba más abajo, Claude decía «bajá con la ruedita» en
+  texto y no marcaba nada). Un renglón con `[RUEDA:abajo|arriba|derecha|izquierda]` (`ruedaDe`; con `[MARCAR]` o
+  `[LUEGO]` sobre algo de la parte que se mueve) es desplazarse, y el renglón siguiente es el control que va a aparecer.
+  La marca de ese paso (`MARCA_RUEDA`) lleva una flecha que late hacia ese lado, **los clicks no la sacan** (se puede
+  arrastrar la barra) y escucha la ruedita, los botones y las teclas de desplazarse (AvPág, RePág, flechas, espacio,
+  Inicio, Fin) por **Raw Input** (`WM_INPUT` con `RIDEV_INPUTSINK`; un hook bajo nivel Windows lo saca si la ventana
+  tarda, y consultar las teclas cada 16 ms pierde las rápidas): cuando el usuario deja de moverse 0,4 s imprime `mueve`.
+  El servidor (`trasRueda`) mira la pantalla y, si ya está el control del paso siguiente, saca la marca sin pausar y
+  marca ese (`marcarSiguiente`); si no, sigue esperando. Lo que el OCR lee dentro del cartel («… hasta ver «X»») no
+  cuenta: la marca imprime dónde quedó (`cartel<TAB>x,y,w,h`). Si al llegar a un paso de ruedita el control siguiente
+  ya se ve, se salta. Esc, «Salir del tutorial» y los 3 min la pausan como siempre. **El `[RUEDA]` del primer paso
+  llega después de marcar** (Claude lo escribe detrás del `[MARCAR:n]`, y la marca sale apenas este se completa): va
+  por stdin como el resto del cartel (`rueda<TAB>abajo`, `refrescarCartel`) y la marca pasa a ser de ruedita. Probado
+  el 24/11 con eventos simulados (ruedita, AvPág, un click que no la saca, Esc sostenido; también con la ruedita por
+  stdin) y con un turno real (ver «El click que no hizo nada»).
 - **La línea**: una curva del borde de Marito más cerca del recuadro hasta el recuadro, aunque esté en la otra pantalla
   (`MarcaLinea`: otra ventana en capas del tamaño de la curva, que se traza en 0,4 s y después queda quieta sin redibujarse).
   `MARCA_DESDE=mouse` la hace salir del mouse y `no` la saca; si Marito está minimizado sale del mouse. Se va con el recuadro.
@@ -383,7 +425,10 @@ Inspirada en el Claude flotante de la app de escritorio / Claude Code: limpia, m
     del 23/11; solo en el último tutorial del chat: el servidor recuerda uno, `c.tuto`), que lo marca de nuevo desde el
     paso 1 como «volver». **Cada renglón se puede tocar** (click o Enter; 24/11, pedido del usuario) y marca ese paso
     (`accion:'paso'`), solo en el último tutorial del chat y sin un turno corriendo; con texto elegido no cuenta. En el
-    celular, sin botón ni renglones que se tocan.
+    celular, sin botón ni renglones que se tocan. **Se nota que se pueden tocar** (24/11, el usuario no se había dado
+    cuenta): cada renglón tocable lleva al final un «▶ desde acá» chiquito y gris (`.paso-desde::after`, naranja con
+    el mouse encima), menos el paso que está corriendo. Volver sin encontrar el paso le pide a Claude seguir el tutorial
+    con la lista marcada (y el paso de ruedita si hay que desplazarse), no en texto (instrucción 3 de la marca).
   - **La barra se corre** (24/11, pedido del usuario): si la ventana de Marito (solo la barra: la que mide menos de media
     pantalla de alto) tapa el control marcado o su cartel cerrado, `marca.cs` (`Apartar`) la mueve para arriba o para
     abajo, lo más cerca que entre, en 0,26 s (sale rápido y frena), y la línea sale de donde quedó. No cambia
@@ -436,9 +481,12 @@ Desde el 23/11 (variante C de `temporal/maquetas/modo-compacto.html`, con los ca
 - **La barra**: una línea arriba y centrada en la pantalla de lo que tenías adelante (600 px de ancho de entrada, a un
   4,5 % de arriba, a la altura de la barra de direcciones; antes 28 %; 24/11, pedido del usuario), con una entrada al
   abrirla (el fondo de la pantalla se oscurece al 45 % con un velo del host, `DimForm`: entra en 0,2 s, queda hasta
-  1,2 s y sale en 0,5 s; deja pasar los clicks y no sale en capturas; un halo naranja de hasta 8 px late una vez en
-  0,9 s, mandado por `entrar`; la bajada desde afuera de la pantalla está escrita pero apagada, `bajarDesdeAfuera`; 24/11, video del
-  usuario: antes se veía ~0,3 s un rectángulo vacío y del pulso solo la cola, recortada contra el borde). **La ventana
+  1,2 s y sale en otros 0,2 s, tan lento como entró; deja pasar los clicks y no sale en capturas; un halo naranja de hasta
+  8 px late una vez en 0,9 s, mandado por `entrar`; la ventana **baja desde arriba del borde de su pantalla** en 0,35 s,
+  frenando, recortada con una región (`Set-RecorteEntrada`) para que no asome en otra pantalla que esté encima; 24/11, video del
+  usuario: antes se veía ~0,3 s un rectángulo vacío y del pulso solo la cola, recortada contra el borde). Medido en la
+  ventana real: un paso cada ~14 ms, la región nunca deja ver nada arriba del borde y se saca al llegar. Ojo:
+  `[Math]::Max(0, x)` en PowerShell redondea a entero (por eso el velo se cortaba de golpe y la bajada saltaba): `0.0`. **La ventana
   nueva arranca tapada** (`DWMWA_CLOAK`, en cualquier modo): la interfaz avisa `pintada` cuando ya tiene el modo puesto
   (dos cuadros después del `ventana` que contesta a `lista`), el host la destapa y le manda `mostrada`, y recién ahí
   entra la barra (`body.tapada` la deja transparente hasta entonces). Si `pintada` no llega, se destapa igual a los 400 ms
@@ -461,7 +509,8 @@ Desde el 23/11 (variante C de `temporal/maquetas/modo-compacto.html`, con los ca
   barrita sola, para ver la pantalla) y otro la abre; un mensaje nuevo la abre sola. Apretar sobre la barra de
   desplazamiento de la respuesta (los 12 px de la derecha, si hay para dónde bajar) desplaza y no mueve la barra.
   La ventana crece con lo que se ve: la UI manda `{tipo:'barraAlto', alto}` (px de CSS) y el host cambia el alto sin mover
-  la parte de arriba. Volver a abrir la barra la trae sin la tarjeta anterior.
+  la parte de arriba. Volver a abrir la barra con Alt+F2 la trae sin la tarjeta anterior; achicarla desde la ventana (el
+  botón de la barra) deja el chat abierto abajo, en la tarjeta (24/11, pedido del usuario: se perdía de vista).
 - **Esc** cierra Marito, como la × (24/11, pedido del usuario; antes la escondía): con el fijo la respuesta sigue y se ve con Alt+F1; sin el fijo y con conversaciones corriendo, pregunta. **Moverla** (24/11, pedido del
   usuario): desde los **6 puntitos** de la izquierda (`#btn-mover`, 32 px, antes de la caja) o un lugar vacío se arrastra
   enseguida; en cualquier otro lado (lo escrito, la respuesta, un botón) dejándola apretada 0,35 s. Hasta 8 px de
@@ -501,8 +550,13 @@ Desde el 24/11 hay una versión pública: el repo `valedominguezl/marito-app` (M
 repo (privado) sigue siendo el único código: `publico\exportar.ps1` lo copia allá desde `HEAD` (no lo sin commitear), sin
 `android\`, `.claude\`, `CLAUDE.md`, `arreglo.ps1`, `servidor-fijo.ps1`, `scripts\` ni las herramientas del ícono; saca de
 `ESPEC.md` «Modo fijo y celular» y «App de Android»; cambia los proyectos de ejemplo (demo, tests) por nombres inventados;
-y suma `publico\` (README, LICENSE, CLAUDE.md, workflow). Al terminar busca rutas o nombres personales y frena si queda
+y suma `publico\` (README, LICENSE, CLAUDE.md, CHANGELOG, workflow). Al terminar busca rutas o nombres personales y frena si queda
 alguno.
+- **Versiones** (24/11, el usuario: el público se actualiza por versiones cada tanto, con notas; queda MIT): se anota
+  la versión en `publico\CHANGELOG.md` («## 0.1.2 — fecha»), se commitea y `publico\version.ps1 -Version 0.1.2` clona
+  el público en `%TEMP%`, exporta, hace push, pone el tag `v0.1.2` y espera el workflow (tope 25 min) hasta ver el
+  `.exe` en el release. Las notas del release salen de esa sección del CHANGELOG (el workflow la recorta). Con
+  `-SinPublicar` solo exporta, para mirar la copia antes. `version.ps1` no va al público.
 - **Qué necesita la PC de otro**: Windows 10/11 x64, WebView2 (viene con Windows 11; si falta, el instalador lo baja),
   PowerShell 5.1 y .NET Framework 4 (vienen con Windows), Claude Code con sesión iniciada. Node lo trae el instalador
   (`node\node.exe`, que `abrir.ps1` prefiere al de la PC). git y gh, solo para publicar. La voz y el dictado son opcionales

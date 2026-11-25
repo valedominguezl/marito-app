@@ -39,6 +39,10 @@ export function instruccionesProyectos(raiz, actual) {
 // Lo que precede a la pantalla que el servidor mira por Claude (lista de marcar.ps1 en el texto, captura como imagen).
 export const YA_MIRE = 'Ya miré la pantalla por vos (marcar.ps1, recién; la captura va como imagen):';
 
+// Va después de la pantalla cuando la pregunta no dice de qué habla («¿por qué falla?», «¿qué pasó?») y la charla venía
+// de la pantalla (24/11: con un error a la vista, Claude siguió explicando el tutorial de antes).
+export const SIN_TEMA = 'La pregunta no dice de qué habla: es sobre lo que se ve AHORA en la pantalla (un error, un aviso, un mensaje, algo que no cargó). Eso manda sobre el tema anterior de la charla; un tutorial que quedó en pausa o se abandonó no es el tema, salvo que lo nombre. Si en la pantalla no hay nada que encaje, decilo en una frase y preguntá a qué se refiere.';
+
 // Señalar en la pantalla (marcar.ps1 + la etiqueta [MARCAR:...]). Va en los dos modos; `dir` es la carpeta de capturas
 // de la sesión. La idea del formato (un paso por respuesta, el control por número de la lista de Windows) viene de
 // Nūs Companion (github.com/potlakai/nus-companion, Apache-2.0).
@@ -51,9 +55,11 @@ export function instruccionesMarcar(dir) {
      - El paso 1, lo que se toca ahora: [MARCAR:<número de la lista>]. Si no está en la lista pero se ve en la captura: [MARCAR:x,y,ancho,alto] con los números de verdad, una caja chica en fracciones de la captura (0 a 1, desde arriba a la izquierda).
      - TODOS los que siguen (lo que aparece después de tocar) llevan [LUEGO:<nombre del control como va a aparecer en la pantalla>], por ejemplo [LUEGO:Guardar como], también las casillas, pestañas y botones de un diálogo que todavía no ves y aunque no estés seguro del nombre o de dónde está: poné el más probable. Cuando el usuario toca el recuadro, la ventana busca ese nombre en la pantalla nueva y marca sola el paso siguiente, sin preguntarte; si no lo encuentra, te avisa y seguís vos. Un paso sin etiqueta corta la cadena y el usuario espera un turno entero.
      - Un solo toque por paso: «Aplicar» y «Aceptar» son dos renglones. Solo va sin etiqueta un paso que no es tocar algo con nombre (escribir un valor, arrastrar, elegir un punto de un dibujo), y la lista termina ahí.
+     - Si lo que hay que tocar no se ve porque hay que desplazarse (más abajo o más arriba en la página o el panel, o a un costado), ese paso es mover la ruedita: «Bajá con la ruedita hasta ver «X».», con la etiqueta de algo que se vea DENTRO de la parte que se mueve (un título, un texto o su barra de desplazamiento; [MARCAR] si es el primero, [LUEGO] si no) y además [RUEDA:abajo] (o arriba, derecha, izquierda). El renglón siguiente es X, con [LUEGO:X]: cuando el usuario deja de mover la ruedita la ventana lo busca y lo marca sola. Nunca digas «bajá con la ruedita» sin ese paso marcado.
      - Cada renglón con etiqueta lleva también, al final, [MAS:<una o dos oraciones que enseñen: para qué sirve o cómo reconocerlo> | <qué pasa al tocarlo: qué se abre o cambia>], por ejemplo [MAS:Ahí están las opciones generales del programa. | Se abre un diálogo con pestañas arriba.]. Es lo que lee el usuario si abre el cartel del recuadro; no lo repitas en el renglón.
      Después de la lista, si ayuda, una o dos oraciones con lo que va a pasar o en qué fijarse. La ventana dibuja un recuadro y el usuario no ve las etiquetas: nunca digas números de la lista ni coordenadas.
-  3. Si te llega "Listo, ya lo toqué." (o que no encontré el paso siguiente, o que quiere volver a un paso que ya no está): volvé a correr el script (la pantalla cambió) y seguí desde donde quedó, con el mismo formato. Cuando ya está, decilo en una frase, sin etiqueta.
+  3. Si te llega "Listo, ya lo toqué." (o que no encontré el paso siguiente, o que no pasó nada, o que quiere volver a un paso que ya no está): usá la pantalla que trae el mensaje (o volvé a correr el script) y seguí el tutorial desde donde quedó CON EL MISMO FORMATO: la lista con [MARCAR] en lo que se hace ahora (aunque sea la ruedita) y [LUEGO] en lo que sigue. No lo expliques solo en texto: el usuario está siguiendo los recuadros. Cuando ya está, decilo en una frase, sin etiqueta.
   - Si no estás seguro de cuál es, no marques: decí qué buscar. Nunca marques campos de contraseña, tarjeta o documento. Si el clic no tiene vuelta (Enviar, Pagar, Borrar, Publicar), decilo en la frase.
-  - Si la ventana de adelante no es el programa que hace falta, decí cuál abrir, sin etiqueta.`;
+  - Si la ventana de adelante no es el programa que hace falta, decí cuál abrir, sin etiqueta.
+- Si pregunta algo sin decir de qué («¿por qué falla?», «¿qué pasó?», «no anda») y venían hablando de la pantalla, la pregunta es sobre lo que se ve ahora (mirala si el mensaje no la trae), no sobre el tema anterior ni un tutorial que dejó.`;
 }

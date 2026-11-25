@@ -113,14 +113,14 @@ function svg(name) { return '<svg viewBox="0 0 24 24" aria-hidden="true">' + ICO
 
 // Markdown de un bloque de texto, con un botón «Copiar» en cada bloque de código (como en VS Code).
 // Las etiquetas [MARCAR:...] y [LUEGO:...] son para la ventana (dibuja el recuadro en la pantalla, ahora o en el paso
-// siguiente), [MAS:…] para su cartel y [CONECTORES] para el servidor (carga los MCP): no se muestran; tampoco una que se
+// siguiente), [MAS:…] para su cartel, [RUEDA:…] para un paso de desplazarse y [CONECTORES] para el servidor (carga los MCP): no se muestran; tampoco una que se
 // está escribiendo. Las de la marca completas dejan un carácter invisible (PASO_1 / PASO_N) para encontrar después
 // los renglones del paso a paso (`marcarPasos`).
 var PASO_1 = '', PASO_N = '';
 function sinMarcas(s) {
   return s.replace(/\n?[ \t]*\[(MARCAR|LUEGO):[^\]\n]*(\])?/g, function (m, tipo, cierre) { return cierre ? (tipo === 'MARCAR' ? PASO_1 : PASO_N) : ''; })
-    .replace(/[ \t]*\[MAS:[^\]\n]*\]?/g, '').replace(/\n?[ \t]*\[CONECTORES\]/g, '')
-    .replace(/\[(?:M(?:A(?:R(?:C(?:A(?:R)?)?)?|S)?)?)?$/, '').replace(/\[L(?:U(?:E(?:G(?:O)?)?)?)?$/, '')
+    .replace(/[ \t]*\[MAS:[^\]\n]*\]?/g, '').replace(/[ \t]*\[RUEDA:[^\]\n]*\]?/g, '').replace(/\n?[ \t]*\[CONECTORES\]/g, '')
+    .replace(/\[(?:M(?:A(?:R(?:C(?:A(?:R)?)?)?|S)?)?)?$/, '').replace(/\[L(?:U(?:E(?:G(?:O)?)?)?)?$/, '').replace(/\[R(?:U(?:E(?:D(?:A)?)?)?)?$/, '')
     .replace(/\[C(?:O(?:N(?:E(?:C(?:T(?:O(?:R(?:E(?:S)?)?)?)?)?)?)?)?)?$/, '');
 }
 // Los renglones (o párrafos) que llevaban una etiqueta de la marca quedan con la clase `paso` (`paso-1` el del

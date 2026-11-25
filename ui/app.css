@@ -385,6 +385,14 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round
   content: ''; position: absolute; inset: -2px -6px -2px -1.75em; z-index: -1; border-radius: 7px; background: var(--hover);
 }
 .md .paso-tocable:focus-visible { outline: none; }
+/* Que se note que se puede tocar (24/11, pedido del usuario): «▶ desde acá» al final de cada renglón, chiquito y gris;
+   naranja con el mouse encima o con el foco. */
+.md .paso-desde::after {
+  content: '▶ desde acá'; display: inline-block; margin-left: 8px; padding: 0 7px; border: 1px solid var(--border);
+  border-radius: 999px; font-size: 11px; line-height: 17px; color: var(--text-3); white-space: nowrap; vertical-align: 1px;
+  transition: color 150ms var(--ease), border-color 150ms var(--ease);
+}
+.md .paso-desde:hover::after, .md .paso-desde:focus-visible::after { color: var(--accent); border-color: var(--accent); }
 .tuto-btn { display: block; width: 100%; max-width: 360px; margin: 4px 0 12px; }
 @media (prefers-reduced-motion: reduce) { .md .paso { transition: none; } }
 
@@ -771,7 +779,7 @@ body.barra .send { order: 3; }
 body.barra .btn-grande { display: grid; order: 4; }
 body.barra .btn-cerrar-barra { display: grid; order: 5; }
 /* Al abrir la barra (pedidos del usuario: encontrarla, que se vea): la ventana baja desde afuera de la pantalla (lo
-   hace el host, con el fondo oscurecido) y, ya en su lugar, un halo naranja late dos veces con el borde encendido.
+   hace el host, con el fondo oscurecido) y, ya en su lugar, un halo naranja late una vez con el borde encendido.
    El halo llega a 8 px: la ventana tiene 12 arriba (con 14 se recortaba contra el borde). */
 body.barra.pulso .composer {
   animation: barra-halo 900ms cubic-bezier(0.33, 1, 0.68, 1) 150ms backwards;

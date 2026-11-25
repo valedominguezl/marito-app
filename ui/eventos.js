@@ -172,7 +172,7 @@ document.addEventListener('mouseup', cortarLargo);
 els.btnContinuar.addEventListener('click', continuar);
 els.btnGrande.addEventListener('click', continuar);
 els.btnBarra.addEventListener('click', function () {
-  if (window.chrome && window.chrome.webview) host({ tipo: 'barra' }); else setWindowMode('barra', true);
+  if (window.chrome && window.chrome.webview) host({ tipo: 'barra' }); else setWindowMode('barra', false);
 });
 
 function onEntrada(ev) {

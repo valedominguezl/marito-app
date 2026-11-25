@@ -2,7 +2,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { buscarControl, fraseMarca, marcasEn, masDe, pasosEn, renglonDe, resolverMarca, textoHablado } from '../servidor-logica.mjs';
+import { buscarControl, fraseMarca, marcasEn, masDe, pasosEn, quedoIgual, renglonDe, resolverMarca, ruedaDe, textoHablado, zonasComparar } from '../servidor-logica.mjs';
+import { contarCambios, leerPng } from './png.mjs';
 import { AQUI } from './constantes.mjs';
 import { difundir, emit } from './conversaciones.mjs';
 import { convs, estado, log, pantallasDir } from './estado.mjs';
@@ -41,14 +42,14 @@ export function ocultarMarca() {
 const pasosDe = (tu) => pasosEn(tu.t.texto.slice(tu.desde));
 
 function pasoDel(tu, i) {
-  if (i === 0) return { nombre: tu.primero.lugar.nombre || '', texto: tu.primero.texto, ...masDe(tu.t.texto, tu.inicio) };
+  if (i === 0) return { nombre: tu.primero.lugar.nombre || '', texto: tu.primero.texto, ...masDe(tu.t.texto, tu.inicio), rueda: ruedaDe(tu.t.texto, tu.inicio) };
   return pasosDe(tu)[i - 1] || null;
 }
 
 // Lo del cartel abierto de ese paso.
 function infoPaso(tu) {
   const p = pasoDel(tu, tu.paso) || {};
-  return { paso: tu.paso + 1, total: 1 + pasosDe(tu).length, mas: p.mas || '', alTocar: p.alTocar || '' };
+  return { paso: tu.paso + 1, total: 1 + pasosDe(tu).length, mas: p.mas || '', alTocar: p.alTocar || '', rueda: p.rueda || '' };
 }
 
 export function avisarTuto(c, tu, extra = {}) {
@@ -94,21 +95,34 @@ export function marcar(c, t, m) {
 function mostrarMarca(c, { lugar, captura, texto, hablado, tu, deServidor = false }) {
   ocultarMarca();
   const info = infoPaso(tu);
+  // Un paso de ruedita: la marca no se va con el click y avisa «mueve» cada vez que el usuario deja de desplazarse. En el
+  // primer paso el [RUEDA] suele llegar después de marcar: va por stdin (refrescarCartel) y cambia `actual.rueda`.
+  const rueda = info.rueda;
   const proc = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-WindowStyle', 'Hidden', '-File', path.join(AQUI, 'marcar.ps1'),
     '-Mostrar', '-X', String(lugar.x), '-Y', String(lugar.y), '-W', String(lugar.w), '-H', String(lugar.h)],
-    { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, MARCA_TEXTO: texto, MARCA_STDIN: '1',
+    { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, MARCA_TEXTO: texto, MARCA_STDIN: '1', MARCA_RUEDA: rueda,
       MARCA_PASO: String(info.paso), MARCA_TOTAL: String(info.total), MARCA_MAS: info.mas, MARCA_ALTOCAR: info.alTocar } });
   proc.stdin.on('error', () => {});
-  const actual = { proc, conv: c.id, sacada: false, salida: '', tu, info };
+  const actual = { proc, conv: c.id, sacada: false, salida: '', tu, info, rueda };
   estado.marca = actual;
-  proc.stdout.on('data', (d) => { actual.salida += d.toString('utf8'); });
+  tu.mostrada = { captura, lugar }; // la pantalla de antes del click: se compara con la de después (seguirPasos)
+  proc.stdout.on('data', (d) => {
+    const s = d.toString('utf8');
+    actual.salida += s;
+    for (const m of s.matchAll(/cartel\t(-?\d+),(-?\d+),(\d+),(\d+)/g)) actual.cartel = { x: +m[1], y: +m[2], w: +m[3], h: +m[4] };
+    if (actual.rueda && /mueve/.test(s)) trasRueda(c, tu, actual).catch((e) => log('tras la ruedita', e.message));
+  });
   proc.stderr.on('data', (d) => log('marca', d.toString().trim().slice(-300)));
   proc.on('error', (e) => log('marca no arrancó', e.message));
   proc.on('close', () => {
     if (estado.marca === actual) estado.marca = null;
     if (actual.sacada || !convs.has(c.id)) return;
-    // Un click adentro sigue con el paso siguiente; salir del cartel, Esc, otro click o el tope lo dejan en pausa.
-    if (/dentro/.test(actual.salida)) seguirPasos(c, tu).catch((e) => log('paso siguiente', e.message));
+    // Un click adentro (o apenas afuera: `cerca`) sigue con el paso siguiente; salir del cartel, Esc, otro click o el
+    // tope lo dejan en pausa.
+    if (/dentro|cerca/.test(actual.salida)) {
+      if (/cerca/.test(actual.salida)) log('marca', c.id, 'click apenas afuera del recuadro: cuenta como adentro');
+      seguirPasos(c, tu).catch((e) => log('paso siguiente', e.message));
+    }
     else { log('marca', c.id, actual.salida.trim() || 'cerrada'); pausarTuto(c, tu); }
   });
   const p = captura.pantalla;
@@ -123,10 +137,11 @@ export function refrescarCartel(t) {
   if (!estado.marca || estado.marca.sacada || estado.marca.tu.t !== t) return;
   const antes = estado.marca.info, ahora = infoPaso(estado.marca.tu);
   let linea = '';
-  for (const [k, clave] of [['paso', 'paso'], ['total', 'total'], ['mas', 'mas'], ['alTocar', 'altocar']]) {
+  for (const [k, clave] of [['paso', 'paso'], ['total', 'total'], ['mas', 'mas'], ['alTocar', 'altocar'], ['rueda', 'rueda']]) {
     if (antes[k] !== ahora[k]) linea += `${clave}\t${String(ahora[k]).replace(/[\r\n\t]+/g, ' ')}\n`;
   }
   estado.marca.info = ahora;
+  if (ahora.rueda) estado.marca.rueda = ahora.rueda;
   if (linea) { try { estado.marca.proc.stdin.write(linea); } catch { /* ya se cerró */ } }
 }
 
@@ -134,19 +149,61 @@ export function refrescarCartel(t) {
 // tarda en reaccionar: se mira de nuevo un par de veces) y se marca sin Claude. Si el paso no aparece, la UI le manda a
 // Claude «Listo, ya lo toqué. No encontré…» (SSE `marca-tocada`, solo en vivo). Un solo paso o la lista terminada: nada
 // (24/11, pedido del usuario: avisarle a Claude que tocó el único paso lo ponía a pensar al pedo).
+// Si el click no cambió nada en la pantalla (24/11, pedido del usuario), Claude se entera: en el último paso se mira de
+// nuevo a los 0,8 y a los 2,3 s (la app puede tardar) y, si sigue igual, «Listo, ya lo toqué («X»), pero no pasó nada…».
 async function seguirPasos(c, tu) {
   if (c.tuto !== tu) return;
   const pasos = pasosDe(tu);
-  if (!pasos.length) { terminarTuto(c, tu); return; }
-  if (tu.paso >= pasos.length) { log('pasos terminados', c.id, pasos.length); terminarTuto(c, tu); return; }
+  // El nombre del paso que escribió Claude («Guardar cambios»), no el del control que lo encontró (el OCR lo junta).
+  const tocado = tu.mostrada && { ...tu.mostrada, nombre: pasoDel(tu, tu.paso)?.nombre || tu.mostrada.lugar?.nombre };
+  if (!pasos.length || tu.paso >= pasos.length) {
+    if (pasos.length) log('pasos terminados', c.id, pasos.length);
+    terminarTuto(c, tu);
+    if (await nadaCambio(c, tu, tocado)) avisarNada(c, tocado, '');
+    return;
+  }
   tu.paso++;
+  tu.mirada = null;
   avisarTuto(c, tu);
   const r = await buscarPaso(c, tu, [500, 900, 1800], ultimaCaptura());
   if (r === null) { pausarTuto(c, tu); return; } // otra marca, un mensaje o salir: queda donde estaba
   if (r) return;
   const sig = pasoDel(tu, tu.paso);
   log('paso siguiente no encontrado', c.id, sig?.nombre);
+  if (tocado && tu.mirada && pantallaIgual(tocado, tu.mirada)) { avisarNada(c, tocado, sig?.nombre); return; }
   difundir({ tipo: 'marca-tocada', conv: c.id, texto: `Listo, ya lo toqué. No encontré «${sig?.nombre}» en la pantalla para marcarlo: mirá de nuevo y seguí.` });
+}
+
+function avisarNada(c, tocado, siguiente) {
+  const nombre = tocado.nombre;
+  log('click sin efecto', c.id, nombre || '(caja)');
+  difundir({ tipo: 'marca-tocada', conv: c.id, nada: true, texto: `Listo, ya lo toqué${nombre ? ` («${nombre}»)` : ''}, pero no pasó nada: la pantalla quedó igual${siguiente ? ` y no aparece «${siguiente}»` : ''}. Mirá de nuevo y decime qué hacer.` });
+}
+
+// ¿La pantalla de después es igual a la del paso tocado? (la ventana de adelante, sin Marito; ver zonasComparar)
+function pantallaIgual(tocado, despues) {
+  const z = zonasComparar(tocado.captura, despues, tocado.lugar);
+  if (!z) return false;
+  try {
+    const cuenta = contarCambios(leerPng(fs.readFileSync(tocado.captura.png)), leerPng(fs.readFileSync(despues.png)), z);
+    log('click: cambios', `p${tocado.captura.n}→p${despues.n}`, `fuera ${cuenta.fuera}`, `en el control ${cuenta.dentro}`);
+    return quedoIgual(cuenta, tocado.lugar.tipo);
+  } catch (e) { log('comparar capturas', e.message); return false; }
+}
+
+// Después de tocar el último paso: mira dos veces y dice si todo quedó igual. false si cambió, no se pudo mirar o dejó
+// de hacer falta (un mensaje nuevo, otra marca, otro tutorial).
+async function nadaCambio(c, tu, tocado) {
+  if (!tocado?.captura?.png) return false;
+  const gen = c.pasoGen = (c.pasoGen || 0) + 1;
+  const vigente = () => c.pasoGen === gen && c.tuto === tu && convs.has(c.id) && !c.turno && !estado.marca && !estado.cerrando;
+  for (const espera of [800, 1500]) {
+    await new Promise((r) => setTimeout(r, espera));
+    if (!vigente()) return false;
+    const cap = await mirarPantalla();
+    if (!vigente() || !cap || !pantallaIgual(tocado, cap)) return false;
+  }
+  return true;
 }
 
 // Mira la pantalla (después de cada espera) y marca el paso que toca del tutorial si encuentra su control. true si lo
@@ -162,6 +219,9 @@ async function buscarPaso(c, tu, esperas, anterior) {
     if (!vigente()) return null;
     const captura = await mirarPantalla();
     if (!vigente()) return null;
+    if (captura) tu.mirada = captura; // la última que se miró: si el paso no aparece, se compara con la de antes
+    // Un paso de ruedita cuyo control siguiente ya se ve (ya bajó, o no hacía falta): se salta y se marca ese.
+    if (captura && sig.rueda && marcarSiguiente(c, tu, captura)) return true;
     const ctl = captura && buscarControl(captura, sig.nombre, anterior, tu.paso === 0 ? tu.primero.lugar : null);
     if (ctl) {
       log('paso', c.id, tu.paso + 1, sig.nombre, `p${captura.n}`, `${Date.now() - inicio} ms`);
@@ -170,6 +230,44 @@ async function buscarPaso(c, tu, esperas, anterior) {
     }
   }
   return false;
+}
+
+const centroEn = (r, x) => !!r && x.x + x.w / 2 >= r.x && x.x + x.w / 2 <= r.x + r.w && x.y + x.h / 2 >= r.y && x.y + x.h / 2 <= r.y + r.h;
+
+// Si el control del paso que sigue al que toca ya está en esta captura, lo marca (avanza un paso) y devuelve true.
+function marcarSiguiente(c, tu, captura) {
+  const sig = pasoDel(tu, tu.paso + 1);
+  const ctl = sig?.nombre && buscarControl(captura, sig.nombre);
+  if (!ctl) return false;
+  log('paso', c.id, tu.paso + 2, sig.nombre, `p${captura.n}`, 'después de la ruedita');
+  tu.paso++;
+  avisarTuto(c, tu);
+  mostrarMarca(c, { lugar: ctl, captura, texto: fraseMarca(sig.texto) || `Tocá «${ctl.nombre}».`, hablado: sig.texto || null, tu, deServidor: true });
+  return true;
+}
+
+// La marca de un paso de ruedita avisó que el usuario dejó de desplazarse: se mira la pantalla y, si ya apareció el
+// control del paso siguiente, se marca ese (la de la ruedita se va sin pausar el tutorial). Si no, se sigue esperando;
+// un aviso que llega mientras se mira hace mirar otra vez al terminar.
+async function trasRueda(c, tu, actual) {
+  if (actual.buscando) { actual.otraVez = true; return; }
+  actual.buscando = true;
+  const vigente = () => estado.marca === actual && !actual.sacada && c.tuto === tu && !tu.pausado && !tu.fin && convs.has(c.id) && !c.turno && !estado.cerrando;
+  try {
+    do {
+      actual.otraVez = false;
+      if (!vigente()) return;
+      const mirada = await mirarPantalla();
+      if (!vigente() || !mirada) return;
+      // Lo que el OCR leyó en el cartel de la marca («Bajá … hasta ver «X»») no es el control.
+      const captura = { ...mirada, controles: (mirada.controles || []).filter((x) => !centroEn(actual.cartel, x)) };
+      const sig = pasoDel(tu, tu.paso + 1);
+      if (!sig?.nombre || !buscarControl(captura, sig.nombre)) continue;
+      actual.sacada = true; killTree(actual.proc.pid); estado.marca = null; // sin pausar: el tutorial sigue
+      marcarSiguiente(c, tu, captura);
+      return;
+    } while (actual.otraVez);
+  } finally { actual.buscando = false; }
 }
 
 // «Volver al tutorial» desde el chat: el mismo paso, buscado en la pantalla como está ahora. El primero, si Claude lo
@@ -195,7 +293,7 @@ export async function volverAlPaso(c, tu) {
     return;
   }
   pausarTuto(c, tu);
-  difundir({ tipo: 'marca-tocada', conv: c.id, texto: `Quiero volver al tutorial, al paso ${tu.paso + 1} («${sig?.nombre || sig?.texto}»), pero no lo encuentro en la pantalla: mirá de nuevo y seguí desde ahí.` });
+  difundir({ tipo: 'marca-tocada', conv: c.id, texto: `Quiero volver al tutorial, al paso ${tu.paso + 1} («${sig?.nombre || sig?.texto}»), pero no lo encuentro en la pantalla: mirá de nuevo y seguí el tutorial desde ahí, con la lista marcada (si hay que bajar o subir para verlo, el paso de la ruedita).` });
 }
 
 // Corre marcar.ps1 como lo hace Claude (captura + controles + textos) y devuelve lo que dejó, con `salida` = la lista

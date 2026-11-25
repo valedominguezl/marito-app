@@ -3,13 +3,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { spawn } from 'node:child_process';
-import { accionTrasTurno, argsClaude, contextoDe, marcasEn, pareceDePantalla, pideConectores, pideProyecto, tituloDe, toolDetail } from '../servidor-logica.mjs';
+import { accionTrasTurno, argsClaude, charlaDePantalla, contextoDe, marcasEn, pareceDePantalla, preguntaDePantalla, pideConectores, pideProyecto, tituloDe, toolDetail } from '../servidor-logica.mjs';
 import { infoAdj } from './adjuntos.mjs';
 import { CONFIG_ARCHIVO, ESFUERZOS, MODELOS, MODELO_INICIAL, PEDIDO_HABLADO, TOPE_TURNO_MS } from './constantes.mjs';
 import { difundir, emit, guardarAbiertas, guardarEnHistorial, resumenConv } from './conversaciones.mjs';
 import { adjuntos, convs, estado, log, pantallasDir, sesionDir } from './estado.mjs';
 import {
-  INSTRUCCIONES_LIBRE, INSTRUCCIONES_PROYECTO, SIN_COMMIT, SIN_CONECTORES, YA_MIRE, instruccionesMarcar, instruccionesProyectos
+  INSTRUCCIONES_LIBRE, INSTRUCCIONES_PROYECTO, SIN_COMMIT, SIN_CONECTORES, SIN_TEMA, YA_MIRE, instruccionesMarcar, instruccionesProyectos
 } from './instrucciones.mjs';
 import { marcar, mirarParaClaude, ocultarMarca, pausarTuto, refrescarCartel } from './marca.mjs';
 import { proyectoPedido, resolverProyecto } from './proyectos.mjs';
@@ -113,12 +113,16 @@ async function arrancarTurno(c, { texto, ids, modelo, esfuerzo, commit, push, cl
   if (!previo) { ocultarMarca(); pausarTuto(c, c.tuto); cortarVoz(c); c.pasoGen = (c.pasoGen || 0) + 1; }
   if (hablar && !previo) nuevaLocucion(c);
   // Una pregunta sobre la pantalla (de la PC): se mira mientras arranca claude y va en el mensaje (ver mirarParaClaude).
-  const verPantalla = !previo && !desdeCelular && pareceDePantalla(texto);
+  // Las de «cómo hago / dónde» van con esfuerzo bajo; las que señalan la pantalla o no dicen de qué hablan (en una charla
+  // que venía de la pantalla) la miran igual, con el esfuerzo de siempre y SIN_TEMA si hace falta.
+  const guia = !previo && !desdeCelular && pareceDePantalla(texto);
+  const otra = !previo && !desdeCelular && !guia ? preguntaDePantalla(texto, charlaDePantalla(c.historial)) : '';
+  const verPantalla = guia || !!otra;
   const pantalla = verPantalla ? mirarParaClaude() : null;
   if (verPantalla && motorVoz()) arrancarVoz(); // como cuando Claude corre marcar.ps1: la voz carga mientras tanto
   // Con la pantalla ya en el mensaje, esfuerzo bajo (si el usuario no eligió otro): mismo paso y misma explicación en
   // 3 de 3 pruebas del 24/11, con el recuadro a los ~4 s en vez de ~6 (el usuario: «lo que ayude, mientras no se equivoque»).
-  const esfuerzoTurno = verPantalla && !esfuerzoUsar ? 'low' : esfuerzoUsar;
+  const esfuerzoTurno = guia && !esfuerzoUsar ? 'low' : esfuerzoUsar;
   const args = argsClaude({ modelo: modeloUsar, instrucciones: (libre ? INSTRUCCIONES_LIBRE : INSTRUCCIONES_PROYECTO + (commit === false ? SIN_COMMIT : ''))
     + instruccionesProyectos(cfg.raiz || '', proy ? proy.nombre : '') + instruccionesMarcar(pantallasDir) + (c.mcp ? '' : SIN_CONECTORES),
     esfuerzo: esfuerzoTurno, libre, discos: libre ? discos() : [], sessionId: c.sessionId, sinMcp: !c.mcp, entradaJson: verPantalla });
@@ -143,7 +147,7 @@ async function arrancarTurno(c, { texto, ids, modelo, esfuerzo, commit, push, cl
     difundir({ ...usuario, cliente: String(cliente || '') });
     emit(c, { tipo: 'turno-inicio', id });
   }
-  log('turno', c.id, id, 'modelo', modeloUsar, 'esfuerzo', esfuerzoTurno || '-', 'pantalla', verPantalla ? 'sí' : 'no', 'mcp', c.mcp ? 'sí' : 'no', 'cwd', cwd, 'resume', c.sessionId || '-');
+  log('turno', c.id, id, 'modelo', modeloUsar, 'esfuerzo', esfuerzoTurno || '-', 'pantalla', guia ? 'guía' : otra || 'no', 'mcp', c.mcp ? 'sí' : 'no', 'cwd', cwd, 'resume', c.sessionId || '-');
 
   const errLog = path.join(sesionDir, 'claude-stderr.log');
   proc.stderr.on('data', (d) => { const s = d.toString(); t.stderr = (t.stderr + s).slice(-4000); try { fs.appendFileSync(errLog, `[${c.id}] ${s}`); } catch { /* idem */ } });
@@ -153,7 +157,7 @@ async function arrancarTurno(c, { texto, ids, modelo, esfuerzo, commit, push, cl
     // claude arranca (~1 s) mientras marcar.ps1 mira (~1 s): el mensaje sale cuando están las dos cosas. Si no se pudo
     // mirar, va el texto solo y Claude corre el script como siempre.
     pantalla.then((v) => {
-      const contenido = [{ type: 'text', text: v ? `${mensaje}\n\n${YA_MIRE}\n${v.lista}` : mensaje }];
+      const contenido = [{ type: 'text', text: v ? `${mensaje}\n\n${YA_MIRE}\n${v.lista}${otra === 'sin-tema' ? `\n\n${SIN_TEMA}` : ''}` : mensaje }];
       if (v) contenido.push({ type: 'image', source: { type: 'base64', media_type: 'image/png', data: v.png } });
       if (!v) log('turno', c.id, id, 'no pude mirar la pantalla antes');
       proc.stdin.end(JSON.stringify({ type: 'user', message: { role: 'user', content: contenido } }) + '\n');

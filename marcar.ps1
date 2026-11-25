@@ -239,9 +239,16 @@ $enOrden = { [int]($_.y / 12) }, { $_.x }
 $lista = @(@($controles | Sort-Object $enOrden | Select-Object -First $Max) + @($textos | Sort-Object $enOrden | Select-Object -First $MaxTextos) | Sort-Object $enOrden)
 for ($i = 0; $i -lt $lista.Count; $i++) { $lista[$i].n = $i + 1 }
 
+# Dónde estaban la ventana y Marito: el servidor compara la captura de antes y la de después de un click para saber
+# si pasó algo (sin Marito, que cambia solo).
+$rv = [MarcaWin]::WindowRect($h)
+$mh = [MarcaWin]::MaritoWindow()
+$rm = if ($mh -ne [IntPtr]::Zero -and -not [MarcaWin]::Minimized($mh)) { [MarcaWin]::WindowRect($mh) } else { $null }
 [ordered]@{
     png = $png; ventana = $titulo; app = $app
     pantalla = [ordered]@{ x = $pantalla.X; y = $pantalla.Y; w = $pantalla.Width; h = $pantalla.Height }
+    rect = [ordered]@{ x = $rv.X; y = $rv.Y; w = $rv.Width; h = $rv.Height }
+    marito = $(if ($rm) { [ordered]@{ x = $rm.X; y = $rm.Y; w = $rm.Width; h = $rm.Height } } else { $null })
     controles = $lista
 } | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $Salida "p$n.json") -Encoding UTF8
 

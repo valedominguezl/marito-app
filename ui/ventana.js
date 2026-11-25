@@ -71,7 +71,13 @@ function setWindowMode(m, abrir) {
   document.body.classList.toggle('barra', m === 'barra');
   document.body.classList.toggle('win-max', m === 'max' || m === 'full');
   els.edges.hidden = m !== 'normal';
-  if (m === 'barra' && (antes !== 'barra' || abrir)) { state.cardTab = null; if (mostrada) pulsoBarra(); }
+  if (m === 'barra' && (antes !== 'barra' || abrir)) {
+    // Achicada desde la ventana (botón de la barra), el chat sigue abajo en la tarjeta (24/11, pedido del usuario: se
+    // perdía de vista); solo el atajo arranca de cero.
+    var tab = state.active;
+    state.cardTab = !abrir && tab && tab.hasMessages ? tab : null;
+    if (mostrada) pulsoBarra();
+  }
   autosize(); // la caja cambia de letra y de renglón entre la barra y la ventana
   paintCard();
   if (m === 'barra' && !TACTIL) els.input.focus();

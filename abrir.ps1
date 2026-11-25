@@ -760,15 +760,29 @@ try {
     # La entrada de la barra (24/11, pedido del usuario): baja desde afuera de la pantalla mientras un velo oscurece la
     # pantalla unos segundos. `Set-Fuera` la deja arriba, afuera, antes de que se vea; `entrar` (lo manda la interfaz
     # cuando arranca su animación) la baja hasta donde iba y prende el velo.
+    # Ojo con [Math]::Min/Max en PowerShell: con un entero de primer argumento elige la versión de enteros y redondea
+    # (`[Math]::Max(0, 0.4)` da 0); por eso van `0.0` y `1.0`. Eso hacía que el velo se cortara de golpe y la bajada saltara.
     $script:velo = $null
     $script:entradaDestino = $null
+    $script:recortada = $false
+    # Mientras baja, la parte que queda arriba del borde de su pantalla no se ve (recorte con una región): si hay otra
+    # pantalla encima, «afuera» se vería en esa. Se recorta antes de moverla, así nunca asoma. Sin `$y`, saca el recorte.
+    function Set-RecorteEntrada([object]$y = $null) {
+        if ($null -eq $y) {
+            if ($script:recortada) { [ArregloWin]::SetWindowRgn($form.Handle, [IntPtr]::Zero, $true) | Out-Null; $script:recortada = $false }
+            return
+        }
+        $arriba = [System.Windows.Forms.Screen]::FromRectangle($script:entradaDestino).Bounds.Top
+        $c = [Math]::Min($form.Height, [Math]::Max(0, $arriba - [int]$y))
+        [ArregloWin]::SetWindowRgn($form.Handle, [ArregloWin]::CreateRoundRectRgn(0, $c, $form.Width + 1, $form.Height + 1, 0, 0), $true) | Out-Null
+        $script:recortada = $true
+    }
     function Set-Fuera {
-        # Apagada hasta arreglarla (24/11): con una pantalla arriba de la de la barra, «afuera» se ve en la otra, y la
-        # bajada medida saltó de una vez (983 → 1126) en vez de deslizarse. Ver el handoff.
-        if (-not $script:bajarDesdeAfuera) { return }
         $script:entradaDestino = $form.Bounds
         $scr = [System.Windows.Forms.Screen]::FromRectangle($form.Bounds)
-        $form.Top = $scr.Bounds.Top - $form.Height - [int](8 * $escala)
+        $y = $scr.Bounds.Top - $form.Height - [int](8 * $escala)
+        Set-RecorteEntrada $y
+        $form.Top = $y
         $script:timerFuera.Stop(); $script:timerFuera.Start()
     }
     # Si la interfaz no manda `entrar`, que no quede afuera de la pantalla.
@@ -790,28 +804,32 @@ try {
         [ArregloWin]::SetWindowPos($script:velo.Handle, $form.Handle, 0, 0, 0, 0, 0x13) | Out-Null
         $script:entradaDesde = $form.Top
         $script:entradaY = $form.Top
+        $script:pasosEntrada = 0
         $script:relojEntrada.Restart()
         $script:timerEntrada.Start()
     }
     $script:timerEntrada.Add_Tick({
         $t = $script:relojEntrada.ElapsedMilliseconds
         $barra = $script:modo -eq 'barra'
-        # Bajada: 550 ms, frenando al final. Se corta si la arrastraron o dejó de ser la barra.
+        # Bajada: 350 ms, frenando al final. Se corta si la arrastraron o dejó de ser la barra.
         $d = $script:entradaDestino
         if ($d) {
             if (-not $barra -or $form.Top -ne $script:entradaY) { $script:entradaDestino = $null }
             else {
-                $p = [Math]::Min(1, $t / 550); $e = 1 - [Math]::Pow(1 - $p, 4)
+                $p = [Math]::Min(1.0, $t / 350); $e = 1 - [Math]::Pow(1 - $p, 4)
                 $y = [int][Math]::Round($script:entradaDesde + ($d.Top - $script:entradaDesde) * $e)
+                Set-RecorteEntrada $y
                 $form.Top = $y; $script:entradaY = $y
                 if ($p -ge 1) { $script:entradaDestino = $null }
             }
+            if (-not $script:entradaDestino) { Set-RecorteEntrada }
         }
-        # Velo (24/11, pedido del usuario: corto, el fondo ya lleva la vista): sube al 45 % en 200 ms, queda y se va
-        # entre los 1,2 y los 1,7 s (o enseguida si ya no es la barra).
-        $o = if (-not $barra) { 0 } elseif ($t -lt 200) { 0.45 * $t / 200 } elseif ($t -lt 1200) { 0.45 } else { 0.45 * [Math]::Max(0, 1 - ($t - 1200) / 500) }
+        # Velo (24/11, pedidos del usuario: corto, el fondo ya lleva la vista, y que salga tan lento como entró): sube al
+        # 45 % en 200 ms, queda y baja en otros 200 ms entre los 1,2 y los 1,4 s (o enseguida si ya no es la barra).
+        $o = if (-not $barra) { 0 } elseif ($t -lt 200) { 0.45 * $t / 200 } elseif ($t -lt 1200) { 0.45 } else { 0.45 * [Math]::Max(0.0, 1 - ($t - 1200) / 200) }
         $script:velo.Opacity = $o
-        if (($t -ge 1700 -or -not $barra) -and -not $script:entradaDestino) { $script:timerEntrada.Stop(); $script:velo.Hide(); Write-Marca "entrada terminada (y=$($form.Top))" }
+        $script:pasosEntrada++
+        if (($t -ge 1400 -or -not $barra) -and -not $script:entradaDestino) { $script:timerEntrada.Stop(); $script:velo.Hide(); Write-Marca "entrada terminada (y=$($form.Top), $($script:pasosEntrada) pasos)" }
     })
 
     # Normal (el costado) / barra / maximizada (área de trabajo) / pantalla completa (toda la pantalla). Se maneja a

@@ -5,7 +5,9 @@ import {
   toolDetail, nombreSeguro, tituloDe, contextoDe, argsClaude, pideConectores, pideProyecto, elegirProyecto, entradaHistorial, sumarAlHistorial, modoPublicacion, accionTrasTurno,
   motivosPublicar, hostDe, esGenericoEn, TOPE_HISTORIAL, TOPE_EVENTOS_HISTORIAL, marcasEn, resolverMarca, fraseMarca, pasosEn, masDe, renglonDe, buscarControl,
   TOPE_CARTEL, textoHablado, cortarHablable, partirFrases, esIpTailscale, accesoRemoto, claveDe, claveValida, leerChecks, checksDeploy, estadoDeploy, quedaAlAbrir,
-  pareceDePantalla,
+  pareceDePantalla, ruedaDe,
+  preguntaDePantalla,
+  charlaDePantalla,
 } from '../servidor-logica.mjs';
 
 test('leerChecks: gh caído o respuesta rota no es «sin deploy»', () => {
@@ -104,7 +106,7 @@ test('marcasEn: encuentra las etiquetas completas y no las cortadas', () => {
 });
 
 test('resolverMarca: por número usa el rectángulo de Windows', () => {
-  assert.deepEqual(resolverMarca('2', captura), { x: -222, y: 1149, w: 51, h: 51, nombre: 'Reload' });
+  assert.deepEqual(resolverMarca('2', captura), { x: -222, y: 1149, w: 51, h: 51, nombre: 'Reload', tipo: 'Button' });
   assert.equal(resolverMarca('9', captura), null);
 });
 
@@ -121,7 +123,7 @@ test('resolverMarca: descarta cajas inválidas o del tamaño de la ventana', () 
 });
 
 test('resolverMarca: por nombre, pero no la plantilla copiada tal cual', () => {
-  assert.deepEqual(resolverMarca('Reload', captura), { x: -222, y: 1149, w: 51, h: 51, nombre: 'Reload' });
+  assert.deepEqual(resolverMarca('Reload', captura), { x: -222, y: 1149, w: 51, h: 51, nombre: 'Reload', tipo: 'Button' });
   assert.equal(resolverMarca('x,y,ancho,alto:Rectangle', captura), null);
 });
 
@@ -131,10 +133,24 @@ const plan = 'Estás en la pieza.\n\n1. Abrí la pestaña «Tools», arriba en l
 
 test('pasosEn: los pasos que siguen con su renglón, en orden', () => {
   assert.deepEqual(pasosEn(plan), [
-    { nombre: 'Application Options', texto: 'Tocá «Application Options», el primer botón.', mas: '', alTocar: '' },
-    { nombre: 'Display', texto: 'Tocá la pestaña «Display» del diálogo.', mas: '', alTocar: '' },
+    { nombre: 'Application Options', texto: 'Tocá «Application Options», el primer botón.', mas: '', alTocar: '', rueda: '' },
+    { nombre: 'Display', texto: 'Tocá la pestaña «Display» del diálogo.', mas: '', alTocar: '', rueda: '' },
   ]);
   assert.deepEqual(pasosEn('Tocá «Guardar».\n[MARCAR:3]'), []);
+});
+
+// Un paso de ruedita: [RUEDA:abajo] en su renglón; no se ve en el paso ni lo dice la voz.
+const conRueda = '1. Tocá «Configuración». [MARCAR:4]\n2. Bajá con la ruedita hasta ver «POP e IMAP». [LUEGO:Reenvío e IMAP] [RUEDA:abajo] [MAS:La sección es larga. | Aparece más abajo.]\n'
+  + '3. Prendé «Permitir IMAP». [LUEGO:Permitir que los dispositivos usen IMAP]';
+test('ruedaDe y pasosEn: el paso de desplazarse lleva su dirección', () => {
+  const p = pasosEn(conRueda);
+  assert.deepEqual(p.map((x) => x.rueda), ['abajo', '']);
+  assert.equal(p[0].texto, 'Bajá con la ruedita hasta ver «POP e IMAP».');
+  assert.equal(p[0].mas, 'La sección es larga.');
+  assert.equal(ruedaDe(conRueda, conRueda.indexOf('[MARCAR')), '');
+  assert.equal(ruedaDe('1. Bajá. [MARCAR:2] [RUEDA: Arriba ]', 5), 'arriba');
+  assert.equal(ruedaDe('1. Bajá. [MARCAR:2] [RUEDA:costado]', 5), '');
+  assert.ok(!textoHablado(conRueda).includes('RUEDA'));
 });
 
 // La marca que enseña: cada paso trae su explicación y qué pasa al tocar, para el cartel abierto.
@@ -245,6 +261,30 @@ test('pareceDePantalla: «cómo hago», «dónde está», guiame y lo que manda 
     'Necesito que el endpoint de pedidos devuelva también el total con descuento y que se vea en la tabla del admin; fijate cómo lo hace el de facturas y copiá esa idea, con sus pruebas y la migración que haga falta en la base.']) {
     assert.ok(!pareceDePantalla(t), t);
   }
+});
+
+test('preguntaDePantalla: lo que señala la pantalla siempre; lo que no dice de qué habla, solo si la charla venía de ahí', () => {
+  for (const t of ['¿qué es esto?', 'lo de ahora. mira esta pantalla y fijate por que falla', 'qué dice este cartel', 'por qué sale este error']) {
+    assert.equal(preguntaDePantalla(t, false), 'senala', t);
+  }
+  for (const t of ['por que falla', '¿Qué pasó?', 'no anda', 'esta tod obien aca?', 'pero dice que no encontró ningún mensaje', 'y ahora?', 'no pasa nada']) {
+    assert.equal(preguntaDePantalla(t, true), 'sin-tema', t);
+    assert.equal(preguntaDePantalla(t, false), '', t);
+  }
+  for (const t of ['dale', 'gracias', 'commiteá esto', 'hola']) assert.equal(preguntaDePantalla(t, true), '', t);
+  assert.equal(preguntaDePantalla('¿por qué falla el build?', false), '');
+});
+
+test('charlaDePantalla: hubo marca, tutorial o zona', () => {
+  assert.ok(!charlaDePantalla([{ tipo: 'usuario', texto: 'hola', adjuntos: [] }, { tipo: 'texto', delta: 'x' }]));
+  assert.ok(charlaDePantalla([{ tipo: 'tutorial', paso: 1 }]));
+  assert.ok(charlaDePantalla([{ tipo: 'marcar', texto: 'x' }]));
+  assert.ok(charlaDePantalla([{ tipo: 'usuario', texto: 'mirá', adjuntos: [{ origen: 'zona' }] }]));
+  assert.ok(!charlaDePantalla(undefined));
+  // Solo desde los dos últimos pedidos: una marca vieja no cuenta.
+  const u = (texto) => ({ tipo: 'usuario', texto, adjuntos: [] });
+  assert.ok(charlaDePantalla([u('guiame'), { tipo: 'marcar' }, { tipo: 'texto' }, u('listo'), { tipo: 'texto' }]));
+  assert.ok(!charlaDePantalla([u('guiame'), { tipo: 'marcar' }, u('otra cosa'), { tipo: 'texto' }, u('y esto'), { tipo: 'texto' }]));
 });
 
 test('pideConectores: la etiqueta sola en un renglón', () => {

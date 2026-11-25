@@ -160,11 +160,12 @@ def prueba_tutorial(pg):
     estado = """() => { const f = [...document.querySelectorAll('.feed')].find(x => !x.hidden);
       const pasos = [...f.querySelectorAll('.paso')]; const b = f.querySelector('.tuto-btn');
       return { texto: f.innerText, pasos: pasos.map(p => (p.classList.contains('paso-hecho') ? 'hecho' : p.classList.contains('paso-ahora') ? 'ahora' : '-')),
+        desde: pasos.map(p => getComputedStyle(p, '::after').content.includes('desde acá')),
         boton: b ? b.textContent : null, primario: b ? b.classList.contains('btn-primary') : false,
         ultimo: b ? (b.nextElementSibling ? b.nextElementSibling.className : 'fin') : null,
         antes: b ? (b.previousElementSibling || {}).className : null } }"""
     e = pg.evaluate(estado)
-    chequear(not any(s in e['texto'] for s in ('[MARCAR', '[LUEGO', '[MAS', '', '', 'Ahí están')), 'las etiquetas y la explicación del cartel no se ven en el chat')
+    chequear(not any(s in e['texto'] for s in ('[MARCAR', '[LUEGO', '[MAS', '[RUEDA', 'desde acá', '', '', 'Ahí están')), 'las etiquetas y la explicación del cartel no se ven en el chat')
     chequear(e['pasos'] == ['ahora', '-', '-'], f"los 3 renglones son pasos y el primero está resaltado ({e['pasos']})")
     chequear(e['boton'] == 'Salir del tutorial' and not e['primario'], f"«Salir del tutorial» ({e['boton']!r})")
     chequear(e['ultimo'] in ('meta', 'fin') and e['antes'] == 'md',
@@ -173,9 +174,12 @@ def prueba_tutorial(pg):
     pg.wait_for_function("document.querySelector('.feed:not([hidden]) .tuto-btn').textContent.startsWith('▶')", timeout=4000)
     e = pg.evaluate(estado)
     chequear(e['boton'] == '▶ Volver al tutorial (paso 1)' and e['primario'], f"en pausa: «▶ Volver al tutorial (paso 1)» naranja ({e['boton']!r})")
+    chequear(e['desde'] == [True, True, True], f"en pausa, cada renglón muestra «▶ desde acá» ({e['desde']})")
     pg.click('.feed:not([hidden]) .tuto-btn')
     pg.wait_for_function("document.querySelector('.feed:not([hidden]) .tuto-btn').textContent === 'Salir del tutorial'", timeout=4000)
     chequear(True, 'volver: el botón vuelve a «Salir del tutorial»')
+    e = pg.evaluate(estado)
+    chequear(e['desde'] == [False, True, True], f"en marcha, «▶ desde acá» en todos menos el que corre ({e['desde']})")
     tid = pg.evaluate("[...document.querySelectorAll('#tabs .tab, #tabs2 .tab')].find(t => t.getAttribute('aria-selected') === 'true').dataset.id")
     tid = f'{tid}-t1'
     pg.evaluate(f"__demo.tocar('{tid}')")
@@ -444,7 +448,12 @@ def prueba_barra(pg):
     chequear(not pg.evaluate("document.body.classList.contains('barra')"), '«Continuar →» pasa a la ventana')
     pg.click('#btn-barra')
     pg.wait_for_timeout(200)
-    chequear(not pg.evaluate("document.body.classList.contains('con-tarjeta')"), 'volver a la barra la abre sin la tarjeta de antes')
+    e = pg.evaluate("""() => ({ tarjeta: document.body.classList.contains('con-tarjeta'),
+      respuesta: [...document.querySelectorAll('.feed')].find(x => !x.hidden).textContent.includes('exportar.ts') })""")
+    chequear(e['tarjeta'] and e['respuesta'], f'achicada con el botón, el chat sigue abajo en la tarjeta ({e})')
+    pg.evaluate("setWindowMode('normal'); setWindowMode('barra', true)")   # lo que hace Alt+F2 con la ventana abierta
+    pg.wait_for_timeout(200)
+    chequear(not pg.evaluate("document.body.classList.contains('con-tarjeta')"), 'Alt+F2 la abre sin la tarjeta de antes')
     pg.fill('#input', '¿Por qué el botón Pedir queda cortado?')   # en el demo contesta con herramientas
     pg.keyboard.press('Enter')
     pg.wait_for_function("document.querySelectorAll('.feed:not([hidden]) .tool').length >= 2", timeout=4000)

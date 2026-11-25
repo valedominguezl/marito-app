@@ -293,6 +293,9 @@ function paintTutorial(tab, tu) {
     x.classList.toggle('paso-hecho', tu.fin && !tu.cortado ? true : i < tu.paso - 1);
     x.classList.toggle('paso-ahora', !tu.fin && i === tu.paso - 1);
     x.classList.toggle('paso-tocable', tocable);
+    // «▶ desde acá» a la vista en cada renglón (24/11, el usuario no se daba cuenta de que se podían tocar), menos en
+    // el que está corriendo.
+    x.classList.toggle('paso-desde', tocable && (tu.fin || tu.pausado || i !== tu.paso - 1));
     if (tocable) { x.tabIndex = 0; x.title = 'Marcar este paso en la pantalla'; }
     else { x.removeAttribute('tabindex'); x.removeAttribute('title'); }
   });

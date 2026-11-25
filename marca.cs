@@ -35,6 +35,30 @@ public static class MarcaWin {
     [DllImport("gdi32.dll")] static extern bool DeleteDC(IntPtr dc);
     [DllImport("gdi32.dll")] static extern IntPtr SelectObject(IntPtr dc, IntPtr o);
     [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr o);
+    [StructLayout(LayoutKind.Sequential)] struct RAWDEV { public ushort page, usage; public uint flags; public IntPtr target; }
+    [DllImport("user32.dll")] static extern bool RegisterRawInputDevices(RAWDEV[] d, uint n, uint size);
+    [DllImport("user32.dll")] static extern uint GetRawInputData(IntPtr h, uint cmd, byte[] data, ref uint size, uint header);
+    // Ruedita y teclado aunque la ventana no esté adelante (RIDEV_INPUTSINK): para el paso de ruedita de la marca.
+    public static bool EscucharEntrada(IntPtr h) {
+        RAWDEV[] d = { new RAWDEV { page = 1, usage = 2, flags = 0x100, target = h }, new RAWDEV { page = 1, usage = 6, flags = 0x100, target = h } };
+        return RegisterRawInputDevices(d, 2, (uint)Marshal.SizeOf(typeof(RAWDEV)));
+    }
+    // De un WM_INPUT: true si fue la ruedita, apretar un botón del mouse o una tecla de desplazarse (AvPág, RePág,
+    // flechas, espacio, Inicio, Fin).
+    public static bool EsDesplazarse(IntPtr lParam) {
+        uint hs = (uint)(8 + 2 * IntPtr.Size), size = 0;
+        GetRawInputData(lParam, 0x10000003, null, ref size, hs);
+        if (size == 0 || size > 4096) return false;
+        byte[] b = new byte[size];
+        if (GetRawInputData(lParam, 0x10000003, b, ref size, hs) != size) return false;
+        uint tipo = BitConverter.ToUInt32(b, 0);
+        if (tipo == 0 && b.Length >= hs + 6) return (BitConverter.ToUInt16(b, (int)hs + 4) & (0x0400 | 0x0800 | 0x0001 | 0x0004)) != 0; // ruedas, botón izq./der. abajo
+        if (tipo == 1 && b.Length >= hs + 8) {
+            ushort vk = BitConverter.ToUInt16(b, (int)hs + 6), flags = BitConverter.ToUInt16(b, (int)hs + 2);
+            return (flags & 1) == 0 && ((vk >= 0x21 && vk <= 0x28) || vk == 0x20);
+        }
+        return false;
+    }
     [StructLayout(LayoutKind.Sequential, Pack = 1)] struct BLEND { public byte op, flags, alpha, format; }
     public struct RECT { public int Left, Top, Right, Bottom; }
 
@@ -148,11 +172,22 @@ public static class MarcaWin {
         int ex = GetWindowLong(h, -20);
         SetWindowLong(h, -20, through ? ex | 0x20 : ex & ~0x20);
     }
-    // La pantalla entera donde está esa ventana, tal cual se ve (con Marito al costado; la marca no sale).
+    // El título de las ventanas de la marca (recuadro y línea): así la captura las encuentra para no sacarlas.
+    public const string TituloMarca = "Marito · marca";
+    [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int cmd);
+    // La pantalla entera donde está esa ventana, tal cual se ve (con Marito al costado), sin la marca: la de un paso de
+    // ruedita queda a la vista mientras se mira y tapaba justo lo que aparecía al bajar (24/11). Se esconde ~60 ms.
     public static void Capture(Rectangle bounds, string path) {
-        using (Bitmap b = new Bitmap(bounds.Width, bounds.Height))
-        using (Graphics g = Graphics.FromImage(b)) {
-            g.CopyFromScreen(bounds.Left, bounds.Top, 0, 0, b.Size);
+        var marcas = new System.Collections.Generic.List<IntPtr>();
+        EnumWindows((h, l) => { if (IsWindowVisible(h) && Title(h) == TituloMarca) marcas.Add(h); return true; }, IntPtr.Zero);
+        using (Bitmap b = new Bitmap(bounds.Width, bounds.Height)) {
+            try {
+                foreach (IntPtr h in marcas) ShowWindow(h, 0); // SW_HIDE
+                if (marcas.Count > 0) System.Threading.Thread.Sleep(60); // que DWM dibuje un cuadro sin ellas
+                using (Graphics g = Graphics.FromImage(b)) g.CopyFromScreen(bounds.Left, bounds.Top, 0, 0, b.Size);
+            } finally {
+                foreach (IntPtr h in marcas) ShowWindow(h, 8); // SW_SHOWNA: vuelve sin tomar el foco
+            }
             b.Save(path, ImageFormat.Png);
         }
     }
@@ -166,7 +201,17 @@ public static class MarcaWin {
 // (o tocándolo) se abre con «PASO 2 DE 5», la explicación, «Al tocar: …» y «Salir del tutorial». Es lo único de la
 // marca que toma clicks: mientras el mouse está encima se le saca WS_EX_TRANSPARENT (sigue sin robar el foco).
 public class MarcaOverlay : Form {
-    public event Action<string> Done; // "dentro" (tocó el recuadro), "salir" (el botón del cartel), "fuera" (otro click), "esc", "tope"
+    public event Action<string> Done; // "dentro" (tocó el recuadro), "cerca" (apenas afuera), "salir" (el botón del cartel), "fuera" (otro click), "esc", "tope"
+    // Un paso de ruedita (MARCA_RUEDA = abajo, arriba, derecha o izquierda; 24/11, pedido del usuario): la marca va sobre
+    // la parte que se mueve con una flecha que late hacia ese lado, los clicks no la sacan y, cada vez que el usuario
+    // deja de desplazarse (ruedita, teclas o arrastrar la barra) 0,4 s, imprime «mueve»: el servidor mira si ya apareció
+    // el control del paso siguiente. También imprime dónde quedó el cartel («cartel<TAB>x,y,w,h»), para no confundir su
+    // texto («… hasta ver «X»») con el control que aparece. La ruedita y las teclas llegan por Raw Input (WM_INPUT): un
+    // hook bajo nivel Windows lo saca solo si la ventana tarda en contestar, y consultar las teclas cada 16 ms pierde
+    // las que se tocan rápido.
+    string rueda; // también llega después por stdin («rueda<TAB>abajo»): el [RUEDA] va detrás del [MARCAR] que ya se marcó
+    bool moved;
+    DateTime lastMove;
     readonly Rectangle target;      // en pantalla (píxeles físicos)
     readonly string text;
     readonly IntPtr ignore;         // clicks sobre esta ventana (Marito) no cuentan
@@ -196,10 +241,12 @@ public class MarcaOverlay : Form {
         this.target = target; this.text = text ?? ""; this.ignore = ignore;
         scale = MarcaWin.ScaleAt(target);
         FormBorderStyle = FormBorderStyle.None; ShowInTaskbar = false; StartPosition = FormStartPosition.Manual; TopMost = true;
+        Text = MarcaWin.TituloMarca;
         int.TryParse(Environment.GetEnvironmentVariable("MARCA_PASO") ?? "", out paso);
         int.TryParse(Environment.GetEnvironmentVariable("MARCA_TOTAL") ?? "", out total);
         mas = Environment.GetEnvironmentVariable("MARCA_MAS") ?? "";
         alTocar = Environment.GetEnvironmentVariable("MARCA_ALTOCAR") ?? "";
+        rueda = DireccionRueda(Environment.GetEnvironmentVariable("MARCA_RUEDA"));
         DoLayout();
         Bounds = area;
         Apartar();
@@ -260,6 +307,10 @@ public class MarcaOverlay : Form {
             }
         }
         area = closedLab.IsEmpty ? box : Rectangle.Union(box, Rectangle.Union(Rectangle.Inflate(closedLab, S(6), S(6)), Rectangle.Inflate(openLab, S(6), S(6))));
+        if (rueda.Length > 0 && !closedLab.IsEmpty) {
+            Rectangle c = Rectangle.Union(closedLab, openLab);
+            Console.Out.WriteLine("cartel\t" + c.X + "," + c.Y + "," + c.Width + "," + c.Height); Console.Out.Flush();
+        }
     }
     Rectangle Place(Size s, Rectangle scr, bool below) {
         int x = Math.Max(scr.Left + S(8), Math.Min(target.Left + target.Width / 2 - s.Width / 2, scr.Right - s.Width - S(8)));
@@ -356,9 +407,21 @@ public class MarcaOverlay : Form {
             case "total": int.TryParse(v, out total); break;
             case "mas": mas = v; break;
             case "altocar": alTocar = v; break;
+            case "rueda": {
+                // El primer paso se marca apenas se completa [MARCAR:n] y el [RUEDA:…] del mismo renglón llega después.
+                string r = DireccionRueda(v);
+                if (r.Length == 0 || r == rueda || done) return;
+                if (rueda.Length == 0) MarcaWin.EscucharEntrada(Handle);
+                rueda = r;
+                break;
+            }
             default: return;
         }
         DoLayout();
+    }
+    static string DireccionRueda(string v) {
+        v = (v ?? "").Trim().ToLowerInvariant();
+        return v == "abajo" || v == "arriba" || v == "derecha" || v == "izquierda" ? v : "";
     }
     // De dónde sale la línea: MARCA_DESDE = marito (por defecto: el borde de Marito más cerca del recuadro), mouse o no.
     Point? LineOrigin() {
@@ -389,7 +452,12 @@ public class MarcaOverlay : Form {
         wasDown = MarcaWin.GetAsyncKeyState(1) < 0;
         if (line != null) line.Show(); // antes que el recuadro: queda abajo de él
         if (Environment.GetEnvironmentVariable("MARCA_STDIN") == "1") ListenInput();
+        if (rueda.Length > 0) MarcaWin.EscucharEntrada(Handle);
         Render(); timer.Start();
+    }
+    protected override void WndProc(ref Message m) {
+        if (m.Msg == 0x00FF && rueda.Length > 0 && !done && MarcaWin.EsDesplazarse(m.LParam)) { moved = true; lastMove = DateTime.Now; } // WM_INPUT
+        base.WndProc(ref m);
     }
     protected override void OnFormClosed(FormClosedEventArgs e) {
         timer.Stop(); timer.Dispose();
@@ -434,14 +502,25 @@ public class MarcaOverlay : Form {
         openT = open ? Math.Min(1, openT + step) : Math.Max(0, openT - step);
 
         bool down = MarcaWin.GetAsyncKeyState(1) < 0 || MarcaWin.GetAsyncKeyState(2) < 0;
+        if (rueda.Length > 0 && !done) {
+            // Arrastrando la barra de desplazamiento: mientras está apretado no se avisa (se avisa al soltar).
+            if (down && !over) { moved = true; lastMove = now; }
+            if (moved && !down && (now - lastMove).TotalMilliseconds > 400) {
+                moved = false;
+                try { Console.Out.WriteLine("mueve"); Console.Out.Flush(); } catch { }
+            }
+        }
         if (down && !wasDown && !done) {
-            if (over) {
+            if (rueda.Length > 0 && !over) { } // en un paso de ruedita el click no la saca (puede estar arrastrando la barra)
+            else if (over) {
                 // Tocar el cartel no saca la marca: lo abre, y el botón sale del tutorial.
                 if (hoverButton) Finish("salir");
                 else if (!open) { open = true; overSince = now; }
             } else {
                 IntPtr under = MarcaWin.GetAncestor(MarcaWin.WindowFromPoint(p), 2);
-                if (under != ignore || ignore == IntPtr.Zero) Finish(Rectangle.Inflate(target, S(6), S(6)).Contains(p) ? "dentro" : "fuera");
+                // Apenas afuera (hasta 24 px): quiso tocarlo; el servidor lo cuenta como adentro y, si no pasó nada, avisa.
+                if (under != ignore || ignore == IntPtr.Zero)
+                    Finish(Rectangle.Inflate(target, S(6), S(6)).Contains(p) ? "dentro" : Rectangle.Inflate(target, S(24), S(24)).Contains(p) ? "cerca" : "fuera");
             }
         }
         wasDown = down;
@@ -482,9 +561,34 @@ public class MarcaOverlay : Form {
                     using (Pen glow = new Pen(Color.FromArgb((int)(70 * enter * fade), Accent), S(9))) g.DrawPath(glow, rp);
                     using (Pen pen = new Pen(Color.FromArgb((int)(255 * Math.Min(1, enter * 1.5f) * fade), Accent), S(3))) g.DrawPath(pen, rp);
                 }
+                if (rueda.Length > 0) DrawArrow(g, t, ms, enter * fade);
                 if (!closedLab.IsEmpty) DrawLabel(g, enter * fade);
             }
             MarcaWin.PushLayered(Handle, bmp, area.Location);
+        }
+    }
+
+    // La flecha de un paso de ruedita: dos ángulos sobre un círculo oscuro en el medio del recuadro, que se corren hacia
+    // donde hay que desplazarse y vuelven, cada 0,9 s.
+    void DrawArrow(Graphics g, Rectangle t, double ms, float vis) {
+        float dx = rueda == "derecha" ? 1 : rueda == "izquierda" ? -1 : 0, dy = rueda == "abajo" ? 1 : rueda == "arriba" ? -1 : 0;
+        PointF c = new PointF(t.X + t.Width / 2f, t.Y + t.Height / 2f);
+        float r = S(19);
+        using (SolidBrush bg = new SolidBrush(Color.FromArgb((int)(225 * vis), 31, 30, 29))) g.FillEllipse(bg, c.X - r, c.Y - r, 2 * r, 2 * r);
+        using (Pen edge = new Pen(Color.FromArgb((int)(200 * vis), Accent), S(1.5f))) g.DrawEllipse(edge, c.X - r, c.Y - r, 2 * r, 2 * r);
+        float ph = (float)(ms % 900 / 900.0);
+        float off = (float)Math.Sin(ph * Math.PI) * S(4);
+        float size = S(7);
+        using (Pen pen = new Pen(Color.FromArgb((int)(255 * vis), Accent), S(3)) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round }) {
+            foreach (float k in new[] { -S(4), S(4) }) {
+                float px = c.X + dx * (k + off), py = c.Y + dy * (k + off);
+                // perpendicular a la dirección
+                float qx = -dy, qy = dx;
+                g.DrawLines(pen, new[] {
+                    new PointF(px - dx * size * 0.5f + qx * size, py - dy * size * 0.5f + qy * size),
+                    new PointF(px + dx * size * 0.5f, py + dy * size * 0.5f),
+                    new PointF(px - dx * size * 0.5f - qx * size, py - dy * size * 0.5f - qy * size) });
+            }
         }
     }
 
@@ -552,6 +656,7 @@ public class MarcaLinea : Form {
 
     MarcaLinea(PointF from, PointF end, float scale) {
         this.scale = scale;
+        Text = MarcaWin.TituloMarca;
         float vx = end.X - from.X, vy = end.Y - from.Y, len = (float)Math.Sqrt(vx * vx + vy * vy);
         // La curva se arquea hacia arriba (o hacia la izquierda si va casi vertical), lejos de Marito.
         float px = -vy / len, py = vx / len;
